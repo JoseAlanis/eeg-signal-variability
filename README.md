@@ -1,2 +1,3 @@
-# eeg-signal-variabilty
-EEG signal variability analysis
+# EEG signal variability project
+
+Contains code for EEG signal variability analysis
