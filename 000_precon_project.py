@@ -12,40 +12,44 @@ parent = Path(__file__).parent.resolve()
 
 # -----------------------------------------------------------------------------
 @click.command()
-@click.option("--rawdata",
-              help="Path to `sourcedata` directory",
-              default=None,
-              type=str)
-@click.option("--sourcedata",
-              help="Path to `sourcedata` directory",
-              default=None,)
-@click.option("--bids",
-              help="Path to directory contain data in BIDS format",
-              default=None,)
-@click.option("--overwrite",
-              help="Should existing path-files be overwritten?",
-              default=False,
-              type=bool)
+@click.option(
+    "--rawdata",
+    help="Path to `sourcedata` directory",
+    default=None,
+)
+@click.option(
+    "--sourcedata",
+    help="Path to `sourcedata` directory",
+    default=None,
+)
+@click.option(
+    "--bids",
+    help="Path to directory contain data in BIDS format",
+    default=None,
+)
+@click.option(
+    "--overwrite",
+    help="Should existing path-files be overwritten?",
+    default=False,
+    type=bool,
+)
 def set_paths(
-        rawdata,
-        sourcedata,
-        bids,
-        overwrite,
+    rawdata,
+    sourcedata,
+    bids,
+    overwrite,
 ):
     """Parse inputs in case script is run from command line."""
     if rawdata is None:
-        rawdata = path.join(parent, 'data', 'rawdata')
+        rawdata = path.join(parent, "data", "rawdata")
     if sourcedata is None:
-        sourcedata = path.join(parent, 'data', 'sourcedata')
+        sourcedata = path.join(parent, "data", "sourcedata")
     if bids is None:
-        bids = path.join(parent, 'data', 'bids')
+        bids = path.join(parent, "data", "bids")
 
     # collect all in dict
     path_vars = dict(
-        rawdata=rawdata,
-        sourcedata=sourcedata,
-        bids=bids,
-        overwrite=overwrite
+        rawdata=rawdata, sourcedata=sourcedata, bids=bids, overwrite=overwrite
     )
 
     return path_vars
@@ -54,19 +58,21 @@ def set_paths(
 # -----------------------------------------------------------------------------
 # write .json file containing basic set of paths needed for the study
 paths = set_paths.main(standalone_mode=False)
-fname = path.join(parent, 'paths.json')
+fname = path.join(parent, "paths.json")
 for key, val in paths.items():
     if not path.exists(val):
-        raise RuntimeError(f"\n    > Could not find '{key}' under {val}.\n"
-                           f"    > Be sure to check if the provided path is "
-                           f"correct.")
+        raise RuntimeError(
+            f"\n    > Could not find '{key}' under {val}.\n"
+            f"    > Be sure to check if the provided path is "
+            f"correct."
+        )
     logger.info(f"    > Setting the path for '{key}': to -> {val}")
 if path.exists(fname):
-    if paths['overwrite']:
-        with open(fname, 'w') as file:
+    if paths["overwrite"]:
+        with open(fname, "w") as file:
             json.dump(paths, file, indent=2)
     else:
-        raise RuntimeError('\n%s already exists.\n' % fname)
+        raise RuntimeError("\n%s already exists.\n" % fname)
 else:
-    with open(fname, 'w') as file:
+    with open(fname, "w") as file:
         json.dump(paths, file, indent=2)
