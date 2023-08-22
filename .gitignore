@@ -1,3 +1,9 @@
 # jetbrains
 .idea/
 __pycache__/
+
+# data dirs
+data/
+
+# files specific to workstation
+paths.json
