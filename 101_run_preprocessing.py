@@ -78,7 +78,8 @@ if not hasattr(sys, "ps1"):
 # %%
 # paths and overwrite settings
 if subject not in SUBJECT_IDS:
-    raise ValueError(f"'{subject}' is not a valid subject ID.\nUse: {SUBJECT_IDS}")
+    raise ValueError(f"{subject} is not a valid subject ID.\n"
+                     f"Use one of: {SUBJECT_IDS}")
 
 # skip bad subjects
 if session == 1 and subject in BAD_SUBJECTS_SES_01:
@@ -199,7 +200,6 @@ raw_task.interpolate_bads(mode='accurate')
 
 # set eeg reference
 raw_task = raw_task.set_eeg_reference('average')
-# raw_task.apply_proj()
 
 # %%
 # prepare ICA
