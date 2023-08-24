@@ -1,0 +1,10 @@
+mne-bids==0.13
+pyprep==0.4.2
+mne-icalabel==0.4
+click==8.1.7
+matplotlib==3.7.1
+fooof==1.0.0
+neurodsp==2.2.1
+antropy==0.1.6
+neurokit2==0.2.5
+ipympl
