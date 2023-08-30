@@ -4,6 +4,7 @@ pandas==2.0.3
 numba==0.57.1
 matplotlib==3.7.1
 pyvista==0.41.1
+pyvistaqt>=0.4
 qtpy==2.3.1
 ipympl
 mne-bids==0.13
