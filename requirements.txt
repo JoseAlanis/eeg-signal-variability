@@ -1,3 +1,11 @@
+ipykernel==6.25.1
+ipython==8.14.0
+pandas==2.0.3
+numba==0.57.1
+matplotlib==3.7.1
+pyvista==0.41.1
+qtpy==2.3.1
+ipympl
 mne-bids==0.13
 pyprep==0.4.2
 mne-icalabel==0.4
@@ -7,4 +15,3 @@ fooof==1.0.0
 neurodsp==2.2.1
 antropy==0.1.6
 neurokit2==0.2.5
-ipympl
