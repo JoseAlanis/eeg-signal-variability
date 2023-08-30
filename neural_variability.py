@@ -56,20 +56,25 @@ def compute_signal_variability(
                              window='hamming')
     psd = psd / psd.sum()
     if freq_lim is None:
-        freq_lim = [freqs[0], freqs[-1]]
         psd_short = psd.copy()
     else:
         psd_short = psd[
+            [(freq >= freq_lim[0]) & (freq <= freq_lim[1]) for freq in freqs]]
+        freqs_short = freqs[
             [(freq >= freq_lim[0]) & (freq <= freq_lim[1]) for freq in freqs]]
 
     if 'fooof' in measures:
         # compute 1/f measures
         fm = FOOOF(verbose=False)
-        fm.fit(freqs, psd, [freq_lim[0], freq_lim[1]])
+        fm.fit(freqs_short, psd_short)
         exp = fm.get_params('aperiodic_params', 'exponent')
         off = fm.get_params('aperiodic_params', 'offset')
         fooof_measures[0, 0] = exp
         fooof_measures[0, 1] = off
+
+        # aperidic_fit = (10 ** off ) * (1 / freqs_short ** exp)
+        # or
+        # aperidic_fit = off - np.log10(freqs_short**exp)
 
     if 's_entropy':
         # compute spectral entropy

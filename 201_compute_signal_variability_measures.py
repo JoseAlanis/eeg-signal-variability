@@ -18,6 +18,7 @@ import warnings
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 from joblib import delayed
 
 import numpy as np
@@ -123,6 +124,20 @@ for stim in ['cue', 'target']:
             # placeholder for results
             vals = np.empty((n_epochs, n_channels, len(measures)+4))
 
+            signal = epochs.get_data()
+
+            # compute psd
+            from scipy.signal import periodogram
+            freqs, psd = periodogram(signal,
+                                     detrend='constant',
+                                     fs=sfreq,
+                                     nfft=sfreq * 2,
+                                     window='hamming')
+
+            for epo in range(psd.shape[0]):
+                for ch in range(psd[epo, :, :].shape[0]):
+                    psd[epo, ch, :] = psd[epo, ch, :] / psd[epo, ch, :].sum()
+
             # compute measures on a single trial level
             for epo in range(n_epochs):
 
@@ -184,7 +199,7 @@ for stim in ['cue', 'target']:
                              'sub-%s_task-%s_%s%s-epo.fif' % (str_subj, task, stage, stim))
 
         if not os.path.exists(FNAME):
-            warnings.warn(FPATH_BIDSDATA_NOT_FOUND_MSG.format(FNAME))
+            warnings.warn(MISSING_FPATH_BIDS_MSG.format(FNAME))
             sys.exit()
 
         # get the data
@@ -206,6 +221,26 @@ for stim in ['cue', 'target']:
         for epo in range(n_epochs):
 
             signal = epochs.get_data()[epo, :, :]
+
+            # freqs, _, spg = spectrogram(signal[0, :] - np.mean(signal[0, :]),
+            #                             1000,
+            #                             'hamming', 800, None,
+            #                             nfft=1000 * 2,
+            #                             detrend=False)
+            #
+            # freqs_1, psd = periodogram(signal[0, :],
+            #                          detrend='constant',
+            #                          fs=1000,
+            #                          nfft=1000 * 2,
+            #                          window='hamming')
+            #
+            # fig, ax = plt.subplots(1,1)
+            # ax.plot(freqs, np.log10(spg), label='spec')
+            # ax.plot(freqs_1, np.log10(psd), label='period')
+            # ax.plot(freqs_short, np.log10(psd_short), label='period')
+            # ax.set_xlim(0, 50)
+            # ax.plot(off - np.log10(freqs_short**exp))
+            # ax.legend()
 
             delayed_funcs = [
                 delayed(compute_signal_variability)(signal[ch],
