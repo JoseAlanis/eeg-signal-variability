@@ -1,6 +1,7 @@
 # jetbrains
 .idea/
 __pycache__/
+*.DS_Store
 
 # data dirs
 data/
