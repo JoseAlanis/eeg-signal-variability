@@ -15,13 +15,69 @@ from antropy.utils import _xlogx
 import neurokit2 as nk
 
 
+def spectral_entropy(x):
+
+    # This part handles the case when the power spectrum density
+    # takes any zero value.
+    # It returns x * log(x) if x is positive, 0 if x == 0, and np.nan otherwise.
+    # (taken from antropy package: https://raphaelvallat.com/antropy/
+    x = np.asarray(x)
+    xlogx = np.zeros(x.shape)
+    xlogx[x < 0] = np.nan
+    valid = x > 0
+    xlogx[valid] = x[valid] * np.log(x[valid]) / np.log(2)
+
+    se = -xlogx.sum() / np.log2(len(x))
+
+    return se
+
+
+def frequency_variability(freqs, psd, freq_lim=None):
+
+    if freq_lim is None:
+        lwf = freqs[0]
+        upf = freqs[-1]
+    else:
+        lwf = freq_lim[0]
+        upf = freq_lim[-1]
+
+    psd = psd[
+        [(freq >= lwf) & (freq <= upf) for freq in freqs]
+    ]
+    freqs = freqs[
+        [(freq >= lwf) & (freq <= upf) for freq in freqs]
+    ]
+
+    # compute 1/f measures
+    try:
+        fm = FOOOF(verbose=False)
+        fm.fit(freqs, psd)
+        exp = fm.get_params('aperiodic_params', 'exponent')
+        off = fm.get_params('aperiodic_params', 'offset')
+    except Exception as error_msg:
+        print("An error occurred:", error_msg)
+        exp = np.nan
+        off = np.nan
+
+    # compute spectral entropy
+    se = spectral_entropy(psd)
+
+    return {'fooof': {'offset': off, 'exponent': exp},
+            'spectral_entropy': se}
+
+
+
+
+
+
 def compute_signal_variability(
         signal, measures='all', freq_lim=None, sfreq=None):
+
     if measures == 'all':
         measures = ['fooof',
                     's_entropy', 'p_entropy', 'wp_entropy',
                     'mse', 'mse_bins', 'mse_slope',
-                    'mobility', 'complexity']
+                    'activity', 'mobility', 'complexity']
 
     fooof_measures = np.empty((1, 2))
     fooof_measures[:] = np.nan
@@ -37,6 +93,8 @@ def compute_signal_variability(
     ms_ent_bins[:] = np.nan
     ms_ent_slope = np.empty((1, 1))
     ms_ent_slope[:] = np.nan
+    act = np.empty((1, 1))
+    act[:] = np.nan
     mobl = np.empty((1, 1))
     mobl[:] = np.nan
     compl = np.empty((1, 1))
@@ -55,9 +113,9 @@ def compute_signal_variability(
                              nfft=fs * 2,
                              window='hamming')
     psd = psd / psd.sum()
-    if freq_lim is None:
-        psd_short = psd.copy()
-    else:
+    psd_short = psd.copy()
+
+    if freq_lim is not None:
         psd_short = psd[
             [(freq >= freq_lim[0]) & (freq <= freq_lim[1]) for freq in freqs]]
         freqs_short = freqs[
@@ -163,15 +221,18 @@ def compute_signal_variability(
 
             ms_ent_slope[0] = slope
 
-    if 'mobility' in measures:
-        # compute Hjorth mobility parameter
-        mob, _ = ant.hjorth_params(signal)
-        mobl[0] = mob
+    # compute Hjorth mobility parameter
+    if (('activity' in measures) or ('mobility' in measures)
+            or ('complexity' in measures)):
 
-    if 'complexity' in measures:
-        # compute Hjorth complexity parameters
-        _, comp = ant.hjorth_params(signal)
-        compl[0] = comp
+        mob, comp = ant.hjorth_params(signal)
+
+        if 'activity' in measures:
+            act = np.var(signal)
+        if 'mobility' in measures:
+            mobl[0] = mob
+        if 'complexity' in measures:
+            compl[0] = comp
 
     var_measures = ['exp_1f', 'off_1f',
                     'shannon_entropy',

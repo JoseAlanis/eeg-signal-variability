@@ -40,6 +40,19 @@ class ProgressParallel(Parallel):
     help="Data from which task should be processed.",
 )
 @click.option(
+    "--stimulus",
+    type=str,
+    default="cue",
+    help="The stimulus should be processed (e.g., the 'cue').",
+)
+@click.option(
+    "--window",
+    type=str,
+    default="pre",
+    help="The time window that should be processed "
+         "(e.g., 'pre' for the 'pre cue timewindow').",
+)
+@click.option(
     "--overwrite",
     default=False,
     type=bool,
@@ -62,7 +75,8 @@ class ProgressParallel(Parallel):
     type=int,
     help="The number of jobs to run in parallel."
 )
-def get_inputs(subject, session, task, overwrite, interactive, report, jobs):
+def get_inputs(subject, session, task, stimulus, window,
+               overwrite, interactive, report, jobs):
     """Parse inputs in case script is run from command line.
     See Also
     --------
@@ -73,6 +87,8 @@ def get_inputs(subject, session, task, overwrite, interactive, report, jobs):
         subject=subject,
         session=session,
         task=task,
+        stimulus=stimulus,
+        window=window,
         overwrite=overwrite,
         interactive=interactive,
         report=report,
