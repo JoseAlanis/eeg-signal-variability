@@ -1,22 +1,21 @@
 # Authors: Jose C. Garcia Alanis <alanis.jcg@gmail.com>
 #
 # License: BSD-3-Clause
-import numpy as np
+import warnings
 
-from scipy.signal import periodogram
+from concurrent.futures import ThreadPoolExecutor
+from tqdm import tqdm
+
+import numpy as np
 
 from fooof import FOOOF
 
-from scipy.stats import linregress
-
 import antropy as ant
-from antropy.utils import _xlogx
 
 import neurokit2 as nk
 
 
 def spectral_entropy(x):
-
     # This part handles the case when the power spectrum density
     # takes any zero value.
     # It returns x * log(x) if x is positive, 0 if x == 0, and np.nan otherwise.
@@ -32,7 +31,7 @@ def spectral_entropy(x):
     return se
 
 
-def frequency_variability(freqs, psd, freq_lim=None):
+def frequency_variability(psd, freqs, freq_lim=None):
 
     if freq_lim is None:
         lwf = freqs[0]
@@ -50,220 +49,122 @@ def frequency_variability(freqs, psd, freq_lim=None):
 
     # compute 1/f measures
     try:
-        fm = FOOOF(verbose=False)
-        fm.fit(freqs, psd)
-        exp = fm.get_params('aperiodic_params', 'exponent')
-        off = fm.get_params('aperiodic_params', 'offset')
-    except Exception as error_msg:
-        print("An error occurred:", error_msg)
+        with warnings.catch_warnings():
+            # just in case weird numerical issues arise
+            warnings.simplefilter("error")
+            fm = FOOOF(verbose=False)
+            fm.fit(freqs, psd)
+            exp = fm.get_params('aperiodic_params', 'exponent')
+            off = fm.get_params('aperiodic_params', 'offset')
+    except Exception as err:
+        print("An error occurred:" % (), err)
         exp = np.nan
         off = np.nan
 
     # compute spectral entropy
     se = spectral_entropy(psd)
 
-    return {'fooof': {'offset': off, 'exponent': exp},
+    return {'1f_offset': off,
+            '1f_exponent': exp,
             'spectral_entropy': se}
 
 
+def signal_variability(signal):
+
+    # permutation entropy
+    pent, _ = nk.entropy_permutation(signal,
+                                     delay=1,
+                                     dimension=3,
+                                     corrected=True,
+                                     weighted=False)
+    # weighted permutation entropy
+    wpent, _ = nk.entropy_permutation(signal,
+                                      delay=1,
+                                      dimension=3,
+                                      corrected=True,
+                                      weighted=True)
+    # multiscale entropy
+    mse, info = nk.entropy_multiscale(signal,
+                                      dimension=3,
+                                      scale=20,
+                                      show=False)
+    # multiscale entropy bins (from fine to coarse)
+    bins = np.array_split(info['Value'], 4)
+    mse_bins = []
+    for mbin in bins:
+        try:
+            with warnings.catch_warnings():
+                # just in case weird numerical issues arise
+                warnings.simplefilter("error")
+                me = np.trapz(mbin[np.isfinite(mbin)]) / len(np.isfinite(mbin))
+                mse_bins.append(me)
+        except Exception as err:
+            print("An error occurred in MSE (bins) computation:" % (), err)
+            mse_bins.append(np.nan)
+
+    try:
+        with warnings.catch_warnings():
+            # just in case weird numerical issues
+            mse_slope = np.polyfit(
+                np.arange(0, len(info['Value'][np.isfinite(info['Value'])])),
+                info['Value'][np.isfinite(info['Value'])],
+                deg=1
+            )[0]
+    except Exception as err:
+        print("An error occurred in MSE (slope) computation:" % (), err)
+        mse_slope = np.nan
+
+    # hjorth parameters
+    act = np.var(signal * 1e6)
+    mob, comp = ant.hjorth_params(signal)
+
+    return {'permutation_entropy': pent,
+            'weighted_permutation_entropy': wpent,
+            'multi-scale entropy': mse,
+            'multi-scale entropy (1)': mse_bins[0],
+            'multi-scale entropy (2)': mse_bins[1],
+            'multi-scale entropy (3)': mse_bins[2],
+            'multi-scale entropy (4)': mse_bins[3],
+            'multi-scale entropy (slope)': mse_slope,
+            'activity': act,
+            'mobility': mob,
+            'complexity': comp}
 
 
+# compute measures in parallel
+def parallel_analysis(inst, freqs=None, jobs=1):
 
+    if freqs is not None:
+        # run frequency analysis
+        results = np.empty((3, inst.shape[0], inst.shape[1]))
 
-def compute_signal_variability(
-        signal, measures='all', freq_lim=None, sfreq=None):
+        # the analysis that should be performed
+        def process_element(m, n):
+            return frequency_variability(
+                inst[m, n, :], freqs, freq_lim=[2.0, 45.0])
 
-    if measures == 'all':
-        measures = ['fooof',
-                    's_entropy', 'p_entropy', 'wp_entropy',
-                    'mse', 'mse_bins', 'mse_slope',
-                    'activity', 'mobility', 'complexity']
-
-    fooof_measures = np.empty((1, 2))
-    fooof_measures[:] = np.nan
-    s_ent = np.empty((1, 1))
-    s_ent[:] = np.nan
-    p_ent = np.empty((1, 1))
-    p_ent[:] = np.nan
-    wp_ent = np.empty((1, 1))
-    wp_ent[:] = np.nan
-    ms_ent = np.empty((1, 1))
-    ms_ent[:] = np.nan
-    ms_ent_bins = np.empty((1, 4))
-    ms_ent_bins[:] = np.nan
-    ms_ent_slope = np.empty((1, 1))
-    ms_ent_slope[:] = np.nan
-    act = np.empty((1, 1))
-    act[:] = np.nan
-    mobl = np.empty((1, 1))
-    mobl[:] = np.nan
-    compl = np.empty((1, 1))
-    compl[:] = np.nan
-
-    # sampling frequency
-    if sfreq is None:
-        fs = len(signal)
     else:
-        fs = sfreq
+        # run amplitude analysis
+        results = np.empty((11, inst.shape[0], inst.shape[1]))
 
-    # compute psd
-    freqs, psd = periodogram(signal - np.mean(signal),
-                             detrend=False,
-                             fs=fs,
-                             nfft=fs * 2,
-                             window='hamming')
-    psd = psd / psd.sum()
-    psd_short = psd.copy()
+        def process_element(m, n):
+            return signal_variability(inst[m, n, :])
 
-    if freq_lim is not None:
-        psd_short = psd[
-            [(freq >= freq_lim[0]) & (freq <= freq_lim[1]) for freq in freqs]]
-        freqs_short = freqs[
-            [(freq >= freq_lim[0]) & (freq <= freq_lim[1]) for freq in freqs]]
+    with ThreadPoolExecutor(max_workers=jobs) as executor:
 
-    if 'fooof' in measures:
-        # compute 1/f measures
-        fm = FOOOF(verbose=False)
-        fm.fit(freqs_short, psd_short)
-        exp = fm.get_params('aperiodic_params', 'exponent')
-        off = fm.get_params('aperiodic_params', 'offset')
-        fooof_measures[0, 0] = exp
-        fooof_measures[0, 1] = off
+        total_tasks = inst.shape[0] * inst.shape[1]
+        progress_bar = tqdm(total=total_tasks, desc="Processing", unit="task")
 
-        # aperidic_fit = (10 ** off ) * (1 / freqs_short ** exp)
-        # or
-        # aperidic_fit = off - np.log10(freqs_short**exp)
+        for i in range(inst.shape[0]):
+            for j in range(inst.shape[1]):
+                out = executor.submit(process_element, i, j).result()
 
-    if 's_entropy':
-        # compute spectral entropy
-        se = -_xlogx(psd_short).sum(axis=0)
-        se /= np.log2(len(psd_short))
+                measures = list(out.keys())
+                for meas in range(len(measures)):
+                    results[meas, i, j] = out[measures[meas]]
 
-        s_ent[0] = se
+                progress_bar.update(1)  # Update the progress bar
 
-    if 'p_entropy' in measures:
-        # compute permutation entropy
-        pent, _ = nk.entropy_permutation(signal,
-                                         delay=1,
-                                         dimension=3,
-                                         corrected=True,
-                                         weighted=False)
+        progress_bar.close()
 
-        p_ent[0] = pent
-
-    if 'wp_entropy' in measures:
-        # compute weighted permutation entropy
-        wpent, _ = nk.entropy_permutation(signal,
-                                          delay=1,
-                                          dimension=3,
-                                          corrected=True,
-                                          weighted=True)
-
-        wp_ent[0] = wpent
-
-    if 'mse' in measures:
-        # compute multi-scale entropy
-        # (i.e., area under the MSE values curve)
-        mse, info = nk.entropy_multiscale(signal,
-                                          dimension=3,
-                                          scale=20,
-                                          show=False)
-
-        ms_ent[0] = mse
-
-        if 'mse_bins' in measures:
-
-            # remove non-finite and zeros
-            bin1 = info['Value'][0:5]
-            bin1 = bin1[np.isfinite(bin1)]
-            # bin1 = [val if np.isfinite(val) else np.nan for val in bin1]
-
-            bin2 = info['Value'][5:10]
-            bin2 = bin2[np.isfinite(bin2)]
-            # bin2 = [val if np.isfinite(val) else np.nan for val in bin2]
-
-            bin3 = info['Value'][10:15]
-            bin3 = bin3[np.isfinite(bin3)]
-            # bin3 = [val if np.isfinite(val) else np.nan for val in bin3]
-
-            bin4 = info['Value'][15:20]
-            bin4 = bin4[np.isfinite(bin4)]
-            # bin4 = [val if np.isfinite(val) else np.nan for val in bin4]
-
-            # compute MSE for different scales
-            if len(bin1) > 1:
-                ms_ent_bins[0, 0] = np.trapz(bin1) / len(bin1)
-            else:
-                ms_ent_bins[0, 0] = -np.inf
-
-            if len(bin2) > 1:
-                ms_ent_bins[0, 1] = np.trapz(bin2) / len(bin2)
-            else:
-                ms_ent_bins[0, 1] = -np.inf
-
-            if len(bin3) > 1:
-                ms_ent_bins[0, 2] = np.trapz(bin3) / len(bin3)
-            else:
-                ms_ent_bins[0, 2] = -np.inf
-
-            if len(bin4) > 1:
-                ms_ent_bins[0, 3] = np.trapz(bin4) / len(bin4)
-            else:
-                ms_ent_bins[0, 3] = -np.inf
-
-        if 'mse_slope' in measures:
-            # remove non-finite and zeros
-            mse_values = info['Value'][np.isfinite(info['Value'])]
-            mse_values = mse_values[np.nonzero(mse_values)]
-            # compute MSE slope
-            slope, intercept, _, _, _ = \
-                linregress(np.arange(1, len(mse_values) + 1), mse_values)
-
-            ms_ent_slope[0] = slope
-
-    # compute Hjorth mobility parameter
-    if (('activity' in measures) or ('mobility' in measures)
-            or ('complexity' in measures)):
-
-        mob, comp = ant.hjorth_params(signal)
-
-        if 'activity' in measures:
-            act = np.var(signal)
-        if 'mobility' in measures:
-            mobl[0] = mob
-        if 'complexity' in measures:
-            compl[0] = comp
-
-    var_measures = ['exp_1f', 'off_1f',
-                    'shannon_entropy',
-                    'permutation_entropy',
-                    'wpermutation_entropy',
-
-                    'ms_entropy',
-                    'ms1-5_entropy',
-                    'ms5-10_entropy',
-                    'ms10-15_entropy',
-                    'ms15-20_entropy',
-
-                    'ms-slope_entropy',
-
-                    'hjorth_mobility',
-                    'hjorth_complexity']
-
-    var_vals = np.array([fooof_measures[0, 0],
-                         fooof_measures[0, 1],
-                         s_ent[0, 0],
-                         p_ent[0, 0],
-                         wp_ent[0, 0],
-                         ms_ent[0, 0],
-                         ms_ent_bins[0, 0],
-                         ms_ent_bins[0, 1],
-                         ms_ent_bins[0, 2],
-                         ms_ent_bins[0, 3],
-                         ms_ent_slope[0, 0],
-                         mobl[0, 0], compl[0, 0]])
-
-    values = var_vals[var_vals != np.nan]
-    names = [mes for val, mes in zip(var_vals, var_measures) if val != np.nan]
-
-    return values, names
+    return results, measures
