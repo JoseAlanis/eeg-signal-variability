@@ -5,6 +5,7 @@ numba==0.57.1
 matplotlib==3.7.1
 qtpy
 PyQt6
+tqdm
 pyvista==0.41.1
 pyvistaqt>=0.4
 ipympl
