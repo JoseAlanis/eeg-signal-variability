@@ -1,6 +1,6 @@
 #!/bin/bash
 
-declare -ar Subjects=($(seq 1 5))
+declare -ar Subjects=($(seq 1 2))
 
 
 # submit job for every permutation
