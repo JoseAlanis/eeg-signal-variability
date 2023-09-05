@@ -14,7 +14,7 @@ account=$(sacctmgr -n -s list user $USER format=account%30| grep -v none | head 
 
     for N in "${Subjects[@]}"; do
                     jobname="siganl_var_subject_N${N}"
-      		    slurmout="Jobs/${jobname}.%j.out"
+      		    slurmout="${jobname}.%j.out"
                     #echo $slurmout
 		    if [[ ! -e ${slurmout} ]]; then
         		 sbatch -A "$account" -J "$jobname" -o "$slurmout" slave.sh "$N"
