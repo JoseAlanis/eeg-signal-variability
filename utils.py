@@ -1,28 +1,33 @@
-"""General utility functions that are re-used in different scripts."""
+"""
+Utility Functions for Data Processing and Command-Line Parsing
+
+This script contains utility functions that are reused in different
+data processing scripts. Specifically, it provides methods to parse
+command-line inputs and handle the overwriting of default values.
+
+Functions:
+-----------
+- `get_inputs`: Parses command-line options related to subject
+  identifiers, data tasks, stimuli, and various processing options.
+  Returns them as a dictionary.
+
+- `parse_overwrite`: Compares user-provided command-line inputs
+  with default values to determine which defaults should be
+  overwritten. Updates the defaults as needed.
+
+Note:
+-----
+The script relies on the 'click' library to handle command-line
+arguments and options.
+
+Examples:
+---------
+To see examples of how these functions can be used, please refer
+to the individual function docstrings.
+"""
 
 import click
 from mne.utils import logger
-
-from tqdm import tqdm
-from joblib import Parallel
-
-
-class ProgressParallel(Parallel):
-    def __init__(self, use_tqdm=True, total=None, *args, **kwargs):
-        self._use_tqdm = use_tqdm
-        self._total = total
-        super().__init__(*args, **kwargs)
-
-    def __call__(self, *args, **kwargs):
-        with tqdm(disable=not self._use_tqdm, total=self._total) as self._pbar:
-            return Parallel.__call__(self, *args, **kwargs)
-
-    def print_progress(self):
-        if self._total is None:
-            self._pbar.total = self.n_dispatched_tasks
-        self._pbar.n = self.n_completed_tasks
-        self._pbar.refresh()
-
 
 @click.command()
 @click.option(
@@ -77,12 +82,47 @@ class ProgressParallel(Parallel):
 )
 def get_inputs(subject, session, task, stimulus, window,
                overwrite, interactive, report, jobs):
-    """Parse inputs in case script is run from command line.
+    """
+    Parse command-line inputs for data processing options.
+
+    Parameters
+    ----------
+    subject : int
+        Subject number to be processed.
+
+    session : int
+        Session number to be processed.
+
+    task : str, optional
+        Specifies the task data to be processed. Defaults to "oddeven".
+
+    stimulus : str, optional
+        Specifies the stimulus to be processed, e.g., "cue". Defaults to "cue".
+
+    window : str, optional
+        Specifies the time window to be processed. Defaults to "pre".
+
+    overwrite : bool, optional
+        Indicates if existing files should be overwritten. Defaults to False.
+
+    interactive : bool, optional
+        Indicates if the processing should be interactive. Defaults to False.
+
+    report : bool, optional
+        Indicates if HTML-reports should be generated. Defaults to False.
+
+    jobs : int, optional
+        The number of jobs to run in parallel. Defaults to 1.
+
+    Returns
+    -------
+    dict
+        A dictionary containing all the parsed input parameters.
+
     See Also
     --------
-    parse_overwrite
+    parse_overwrite : Further function to parse the overwrite option.
     """
-    # collect all in dict
     inputs = dict(
         subject=subject,
         session=session,
@@ -99,7 +139,40 @@ def get_inputs(subject, session, task, stimulus, window,
 
 
 def parse_overwrite(defaults):
-    """Parse which variables to overwrite."""
+    """
+   Parse command-line inputs to update default variables, if needed.
+
+   Invokes `get_inputs` to fetch user-defined inputs from the command line.
+   Compares these against the provided defaults and updates them if needed.
+
+   Parameters
+   ----------
+   defaults : dict
+       Dictionary of default parameters for data processing.
+
+   Returns
+   -------
+   dict
+       Updated dictionary with either default or overwritten parameters.
+
+   See Also
+   --------
+   get_inputs : Function used to fetch command-line inputs.
+
+   Examples
+   --------
+   >>> default_params = {'subject': 1, 'session': 1, 'task': 'oddeven'}
+   >>> parse_overwrite(default_params)
+   {
+       'subject': 1,
+       'session': 1,
+       'task': 'new_task'  # if 'new_task' was input at command line
+   }
+
+   Notes
+   -----
+   Logs overwritten variables and their new values using a logger.
+   """
     logger.info(f"\n    > Parsing command line options ...\n")
 
     # invoke `get_inputs()` as command line application
