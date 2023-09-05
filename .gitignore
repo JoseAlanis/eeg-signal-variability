@@ -5,6 +5,7 @@ __pycache__/
 
 # data dirs
 data/
+jobs/
 
 # files specific to workstation
 paths.json
