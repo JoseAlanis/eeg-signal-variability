@@ -7,7 +7,7 @@
 #SBATCH -t 00:02:00          # Run time (hh:mm:ss)
 
 module purge
-module load lang/Anaconda3
+module add lang/Anaconda3
 conda activate /lustre/miifs01/project/m2_jgu-amd/josealanis/envs/mne-1.5
 
 # Run Script
