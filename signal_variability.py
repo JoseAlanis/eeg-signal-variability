@@ -3,7 +3,7 @@
 # License: BSD-3-Clause
 import warnings
 
-from concurrent.futures import ThreadPoolExecutor
+from joblib import Parallel, delayed
 from tqdm import tqdm
 
 import numpy as np
@@ -131,40 +131,38 @@ def signal_variability(signal):
             'complexity': comp}
 
 
-# compute measures in parallel
-def parallel_analysis(inst, freqs=None, jobs=1):
-
+def process_element(inst, m, n, freqs=None):
     if freqs is not None:
-        # run frequency analysis
-        results = np.empty((3, inst.shape[0], inst.shape[1]))
-
-        # the analysis that should be performed
-        def process_element(m, n):
-            return frequency_variability(
-                inst[m, n, :], freqs, freq_lim=[2.0, 45.0])
-
+        return frequency_variability(inst[m, n, :], freqs, freq_lim=[2.0, 45.0])
     else:
-        # run amplitude analysis
+        return signal_variability(inst[m, n, :])
+
+
+def parallel_analysis(inst, freqs=None, jobs=1):
+    if freqs is not None:
+        results = np.empty((3, inst.shape[0], inst.shape[1]))
+    else:
         results = np.empty((11, inst.shape[0], inst.shape[1]))
 
-        def process_element(m, n):
-            return signal_variability(inst[m, n, :])
+    total_tasks = inst.shape[0] * inst.shape[1]
+    progress_bar = tqdm(total=total_tasks, desc="Processing", unit="task")
 
-    with ThreadPoolExecutor(max_workers=jobs) as executor:
+    tasks = [(i, j) for i in range(inst.shape[0]) for j in range(inst.shape[1])]
+    batch_size = total_tasks // 10
 
-        total_tasks = inst.shape[0] * inst.shape[1]
-        progress_bar = tqdm(total=total_tasks, desc="Processing", unit="task")
+    for i in range(0, len(tasks), batch_size):
+        batch = tasks[i:i + batch_size]
+        output_list = Parallel(n_jobs=jobs)(
+            delayed(process_element)(inst, i, j, freqs) for (i, j) in batch
+        )
 
-        for i in range(inst.shape[0]):
-            for j in range(inst.shape[1]):
-                out = executor.submit(process_element, i, j).result()
+        for idx, (i, j) in enumerate(batch):
+            out = output_list[idx]
+            measures = list(out.keys())
+            for meas in range(len(measures)):
+                results[meas, i, j] = out[measures[meas]]
 
-                measures = list(out.keys())
-                for meas in range(len(measures)):
-                    results[meas, i, j] = out[measures[meas]]
+            progress_bar.update(1)
 
-                progress_bar.update(1)  # Update the progress bar
-
-        progress_bar.close()
-
+    progress_bar.close()
     return results, measures

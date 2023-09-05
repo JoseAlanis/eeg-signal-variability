@@ -174,6 +174,11 @@ FPATH_PSD = os.path.join(
 if not Path(FPATH_PSD).parent.exists():
     Path(FPATH_PSD).parent.mkdir(parents=True, exist_ok=True)
 
+if os.path.exists(FPATH_PSD) and not overwrite:
+    raise RuntimeError(
+        f"'{FPATH_PSD}' already exists; consider setting 'overwrite' to True"
+    )
+
 psd_results.to_csv(FPATH_PSD, index=False, sep='\t', float_format='%.4f')
 
 # tidy up
