@@ -9,4 +9,4 @@
 module purge
 
 # Run Script
-srun /lustre/miifs01/project/m2_jgu-amd/josealanis/envs/mne-1.5/bin/python 201_compute_signal_variability_measures.py --subject $i --session 1 --task 'oddeven' --stimulus 'cue' --window 'post' --overwrite True --jobs 64
+srun /lustre/miifs01/project/m2_jgu-amd/josealanis/envs/mne-1.5/bin/python 201_compute_signal_variability_measures.py --subject=$1 --session=1 --task='oddeven' --stimulus='cue' --window='post' --overwrite=True --jobs=64
