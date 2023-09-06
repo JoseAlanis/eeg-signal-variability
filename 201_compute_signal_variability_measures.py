@@ -163,6 +163,30 @@ psd_results = pd.DataFrame(
         (psd_adds, np.array(['f_' + str(f) for f in freqs])))
 )
 
+# only keep relevant frequencies
+psd_results.drop(
+    psd_results.columns[np.arange(209, 1009)],
+    axis=1,
+    inplace=True
+)
+
+# make column types for pandas dataframe
+types_subj = {
+    "subject": int,
+    "epoch": int,
+    "sensor": int,
+    "accuracy": int,
+    "rt": np.float64
+}
+types_fp = [np.float64 for i in np.arange(0, 201)]
+types_fq = {'f_' + str(key): val
+            for key, val
+            in zip(freqs[freqs <= 100], types_fp)}
+types_psd_results = types_subj | types_fq
+
+# set column types
+psd_results = psd_results.astype(types_psd_results)
+
 # %%
 # export PSD results to .tsv
 FPATH_PSD = os.path.join(
@@ -179,7 +203,7 @@ if os.path.exists(FPATH_PSD) and not overwrite:
         f"'{FPATH_PSD}' already exists; consider setting 'overwrite' to True"
     )
 
-psd_results.to_csv(FPATH_PSD, index=False, sep='\t', float_format='%.4f')
+psd_results.to_csv(FPATH_PSD, index=False, sep='\t', float_format='%.5f')
 
 # tidy up
 del psd_results, psd_st, e, c, f, epo, ch
