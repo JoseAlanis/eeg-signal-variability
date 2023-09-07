@@ -3,6 +3,10 @@
 __pycache__/
 *.DS_Store
 
+# bash
+master.sh
+slave.sh
+
 # data dirs
 data/
 jobs/
