@@ -232,7 +232,6 @@ for ev in range(evs.shape[0]):
         isi.append((evs[ev + 1, 0] - evs[ev, 0]) / sfreq)
 
 # %%
-
 # construct epochs metadata
 metadata = {'subject': subject,
             'rt': rt,
@@ -240,6 +239,28 @@ metadata = {'subject': subject,
             'behavior': repeat_switch,
             }
 metadata = pd.DataFrame(metadata)
+
+# %%
+# save RT measures for later analyses
+rt_data = metadata.copy()
+# create path for preprocessed data
+FPATH_RT = os.path.join(FPATH_DERIVATIVES,
+                        'rt',
+                        'sub-%s' % f'{subject:03}',
+                        'sub-%s_%s_rt.tsv' % (f'{subject:03}', task))
+
+# check if directory exists
+if not Path(FPATH_RT).exists():
+    Path(FPATH_RT).parent.mkdir(parents=True, exist_ok=True)
+
+# save rt data to disk
+rt_data.to_csv(FPATH_RT,
+               sep='\t',
+               index=False)
+
+# %%
+# meta data for epochs
+# drop missing values
 metadata = metadata.dropna()
 
 # relevant events (fix-cross)
@@ -254,7 +275,7 @@ target_evs = evs[(evs[:, 2] == 40) |
                  (evs[:, 2] == 51), :]
 
 # %%
-# create path for preprocessed dara
+# create path for preprocessed data
 FPATH_EPOCHS = os.path.join(FPATH_DERIVATIVES,
                             'epochs',
                             'sub-%s' % f'{subject:03}')
