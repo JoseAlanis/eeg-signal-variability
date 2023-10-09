@@ -1,0 +1,88 @@
+---
+title: "More than noise?: Analysis of power spectral density (PSD)."
+author: "José C. García Alanis"
+date:  "`r Sys.Date()`"
+output:
+html_document:
+theme: lumen
+highlight: pygments
+css: "styler.css"
+---
+
+Created with `r R.version.string`
+```{r, setup, include = FALSE}
+knitr::opts_chunk$set(class.source = "customCode",
+                      class.output = "customOutput",
+                      class.message = "customWarning")
+if(interactive()){
+  path <- dirname(rstudioapi::getSourceEditorContext()$path)
+} else {
+  path <- normalizePath('./')
+}
+setwd(path)
+source('utils.R')
+```
+
+## 0) Load necessary packages:
+
+```{r}
+load.package(c('rjson', 'dplyr', 'ggplot2'))
+```
+
+# 1) Import the data
+
+```{r}
+# get paths to data
+paths <- fromJSON(file = "paths.json")
+fpath_psd_oddeven <- paste(paths$bids,
+                           'derivatives',
+                           'power_spectral_density',
+                           'oddeven_*',
+                           '*',
+                           sep = '/')
+
+psd_files_oddeven <- Sys.glob(fpath_psd_oddeven)
+
+# import the data
+psd_list_oddeven <- lapply(psd_files_oddeven,
+                           read.table,
+                           sep = '\t',
+                           header = TRUE,
+                           colClasses = c(
+                                   rep('integer', 3),
+                                   rep('character', 3),
+                                   'integer',
+                                   'numeric',
+                                   rep('NULL', 4),
+                                   rep('numeric', 97),
+                                   rep('NULL', 100)
+                           )
+)
+
+# row bind RT data.frames
+psd_df_oddeven <- bind_rows(psd_list_oddeven, .id = NULL)
+rm(fpath_psd_oddeven, psd_files_oddeven, psd_list_oddeven)
+```
+
+```{r}
+behavioral_measures <- psd_df_oddeven %>%
+  select(subject, epoch, condition, accuracy, rt) %>%
+  unique() %>%
+  arrange(subject, epoch)
+
+ggplot(data = psd_df_oddeven,
+       aes(x = rt)) +
+  geom_histogram(bins = 100) +
+  facet_grid(rows = vars(accuracy),
+             cols = vars(condition))
+```
+
+```{r}
+psd_df_oddeven <- psd_df_oddeven %>%
+        filter(accuracy == 1) %>%
+        filter(rt >= 0.100 & rt <= 1.000)
+```
+
+```{r}
+
+```
