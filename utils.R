@@ -18,14 +18,21 @@ load.package <- function(package, repos) {
   if (!is.null(missing)) {
     if (missing(repos)) {
       # use Goettingen (Germany) mirror as default
-      repos <- 'https://ftp.gwdg.de/pub/misc/cran/'
+      repos <- 'https://ftp.fau.de/cran/'
     }
-    install.packages(missing, dependencies = TRUE,
-                     repos = repos)
+    install.packages(
+      missing,
+      lib="/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env",
+      dependencies = TRUE,
+      repos = repos
+    )
   }
 
   # load all packages
-  sapply(package, require, character.only = TRUE)
+  sapply(package, require,
+         character.only = TRUE ,
+         lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env"
+  )
 }
 
 #' Create APA-styled HTML table using the gt package.

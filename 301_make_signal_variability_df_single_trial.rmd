@@ -4,9 +4,9 @@ author: "José C. García Alanis"
 date:  "`r Sys.Date()`"
 output:
   html_document:
-   theme: lumen
-   highlight: pygments
-   css: "styler.css"
+    theme: lumen
+    highlight: pygments
+    css: "styler.css"
 ---
 
 Created with `r R.version.string`

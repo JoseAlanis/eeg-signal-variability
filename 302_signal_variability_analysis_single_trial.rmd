@@ -4,9 +4,9 @@ author: "José C. García Alanis"
 date:  "`r Sys.Date()`"
 output:
   html_document:
-   theme: lumen
-   highlight: pygments
-   css: "styler.css"
+    theme: lumen
+    highlight: pygments
+    css: "styler.css"
 ---
 
 Created with `r R.version.string`
@@ -26,8 +26,11 @@ source('utils.R')
 
 ```{r session-preferences, include = FALSE}
 load.package(
-        c('rjson', 'dplyr', 'tidyr', 'stringr',
-          'afex', 'emmeans', 'effectsize', 'ggplot2')
+        c('parallel', 'foreach',
+          'rjson', 'dplyr', 'tidyr', 'stringr',
+          'afex', 'optimx',
+          'performance', 'emmeans', 'effectsize',
+          'ggplot2')
 )
 
 # adjust the plotting theme
@@ -42,6 +45,27 @@ theme_set(
 
 # scale function
 scale2 <- function(x, na.rm = TRUE) (x - mean(x, na.rm = na.rm)) / sd(x, na.rm)
+
+# parallel settings
+n.cores <- 2
+my.cluster <- parallel::makeCluster(
+        n.cores,
+        type = "PSOCK"
+)
+# print(my.cluster)
+
+# register it to be used by %dopar%
+doParallel::registerDoParallel(cl = my.cluster)
+
+#c heck if it is registered (optional)
+# foreach::getDoParRegistered()
+
+# function for combining output of foreach
+comb <- function(List1, List2) {
+  output_a <- c(List1[[1]], List2[[1]])
+  output_b <- c(List1[[2]], List2[[2]])
+  return(list(contrasts = output_a, effects = output_b))
+}
 ```
 
 ```{r import-data}
@@ -70,26 +94,6 @@ measures <- c("permutation_entropy", "weighted_permutation_entropy",
               "1f_offset", "1f_exponent",
               "spectral_entropy")
 
-n.cores <- 4
-my.cluster <- parallel::makeCluster(
-  n.cores,
-  type = "PSOCK"
-)
-print(my.cluster)
-require(foreach)
-
-#register it to be used by %dopar%
-doParallel::registerDoParallel(cl = my.cluster)
-
-#check if it is registered (optional)
-foreach::getDoParRegistered()
-
-comb <- function(List1, List2) {
-  output_a <- c(List1[[1]], List2[[1]])
-  output_b <- c(List1[[2]], List2[[2]])
-  return(list(contrats = output_a, effects = output_b))
-}
-
 # run model for each sensor
 for (sensor_n in 12:15) {
 
@@ -108,13 +112,18 @@ for (sensor_n in 12:15) {
           )
 
   # and euch measure
-  oper <- foreach(meas = measures[1:2], .combine = 'comb', .init = list(list(), list())) %dopar% {
+  sensor_results <- foreach(
+          meas = measures[1:2],
+          .combine = 'comb',
+          .init = list(list(), list())
+  ) %dopar% {
 
     require(dplyr)
     require(afex)
     require(emmeans)
 
-    print(paste0('Running model for sensor: ', sensor_n, '. Measure: ', meas))
+    # # * for debbuging purposes *
+    # print(paste0('Running model for sensor: ', sensor_n, '. Measure: ', meas))
 
     # get measure of interest
     dat <- sensor %>%
@@ -135,16 +144,19 @@ for (sensor_n in 12:15) {
             mutate(predictor = row.names(var_mxd$anova_table),
                    F = var_mxd$anova_table$F,
                    p = var_mxd$anova_table$`Pr(>F)`,
+                   o_sq = effectsize::F_to_omega2(f = var_mxd$anova_table$F,
+                                                  df = var_mxd$anova_table$`num Df`,
+                                                  df_error = var_mxd$anova_table$`den Df`),
                    optimiser = attr(var_mxd$full_model, 'optinfo')$optimizer,
                    sensor = sensor_n + 1,
                    measure = meas)
 
-    # save model results
-    #sensor_effects <- rbind(sensor_effects, df_model_fit)
+    # # save model results
+    # sensor_effects <- rbind(sensor_effects, df_model_fit)
 
     # compute contrasts
     var_eff <- emmeans(
-            var_mxd, ~ tw,
+            var_mxd$full_model, ~ tw,
             type = 'response',
             lmer.df = "satterthwaite",
             lmerTest.limit = nrow(dat),
@@ -168,12 +180,22 @@ for (sensor_n in 12:15) {
                    sensor = sensor_n + 1,
                    measure = meas)
 
-    # save effect sizes
-    #sensor_contrasts <- rbind(sensor_contrasts, contr_d)
+    # # save effect sizes
+    # sensor_contrasts <- rbind(sensor_contrasts, contr_d)
 
     list(contrasts = list(contr_d), effects = list(df_model_fit))
 
   }
+
+  # save model fits
+  fits <- sensor_results[2] %>%
+          bind_rows()
+  sensor_effects <- rbind(sensor_effects, fits)
+
+  # save effect sizes
+  eff_sizes <- sensor_results[1] %>%
+          bind_rows()
+  sensor_contrasts <- rbind(sensor_contrasts, eff_sizes)
 
 }
 ```
