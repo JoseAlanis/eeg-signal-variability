@@ -10,6 +10,7 @@ css: "styler.css"
 ---
 
 Created with `r R.version.string`
+
 ```{r, setup, include = FALSE}
 knitr::opts_chunk$set(class.source = "customCode",
                       class.output = "customOutput",
@@ -25,14 +26,22 @@ source('utils.R')
 
 ## 0) Load necessary packages:
 
-```{r}
-load.package(c('rjson', 'dplyr', 'ggplot2'))
+```{r session-preferences, include = FALSE}
+load.package(c('rjson', 'dplyr', 'tidyr', 'ggplot2'))
+
+# adjust the plotting theme
+theme_set(
+  theme_linedraw() +
+    theme(panel.grid = element_blank(),
+          strip.background = element_rect(fill = "grey92", color = "grey92"),
+          strip.text = element_text(color = "black", size = 10))
+)
 ```
 
 # 1) Import the data
 
-```{r}
-# get paths to data
+```{r import-data-oddeven}
+# get paths to Odd/Even task PSD
 paths <- fromJSON(file = "paths.json")
 fpath_psd_oddeven <- paste(paths$bids,
                            'derivatives',
@@ -64,25 +73,102 @@ psd_df_oddeven <- bind_rows(psd_list_oddeven, .id = NULL)
 rm(fpath_psd_oddeven, psd_files_oddeven, psd_list_oddeven)
 ```
 
-```{r}
-behavioral_measures <- psd_df_oddeven %>%
-  select(subject, epoch, condition, accuracy, rt) %>%
-  unique() %>%
-  arrange(subject, epoch)
+```{r import-data-numberletter}
+# get paths to Odd/Even task PSD
+fpath_psd_numberletter <- paste(paths$bids,
+                           'derivatives',
+                           'power_spectral_density',
+                           'numberletter_*',
+                           '*',
+                           sep = '/')
 
-ggplot(data = psd_df_oddeven,
-       aes(x = rt)) +
-  geom_histogram(bins = 100) +
-  facet_grid(rows = vars(accuracy),
-             cols = vars(condition))
+psd_files_numberletter <- Sys.glob(fpath_psd_numberletter)
+
+# import the data
+psd_list_numberletter <- lapply(psd_files_numberletter,
+                           read.table,
+                           sep = '\t',
+                           header = TRUE,
+                           colClasses = c(
+                             rep('integer', 3),
+                             rep('character', 3),
+                             'integer',
+                             'numeric',
+                             rep('NULL', 4),
+                             rep('numeric', 97),
+                             rep('NULL', 100)
+                           )
+)
+
+# row bind RT data.frames
+psd_df_numberletter <- bind_rows(psd_list_numberletter, .id = NULL)
+rm(fpath_psd_numberletter, psd_files_numberletter, psd_list_numberletter)
 ```
 
 ```{r}
 psd_df_oddeven <- psd_df_oddeven %>%
-        filter(accuracy == 1) %>%
-        filter(rt >= 0.100 & rt <= 1.000)
+  mutate(task = 'Odd/Even')
+
+psd_df_numberletter <- psd_df_numberletter %>%
+  mutate(task = 'Number/Letter')
 ```
 
 ```{r}
-
+psd <- bind_rows(psd_df_oddeven, psd_df_numberletter)
+rm(psd_df_oddeven, psd_df_numberletter)
 ```
+```{r}
+psd_subject <- psd %>%
+  filter(accuracy == 1) %>%
+  select(-epoch) %>%
+  group_by(subject, task, condition, window, stimulus, sensor) %>%
+  summarise_if(is.numeric, mean, na.rm = TRUE) %>%
+  tidyr::pivot_longer(f_2.0:f_50.0, names_sep = '_',
+                      names_to = c('F', 'freq'), values_to = 'psd') %>%
+  select(-F) %>%
+  mutate(freq = as.numeric(freq)) %>%
+  ungroup() %>%
+  mutate(time_window = paste(stringr::str_to_title(window),
+                             stringr::str_to_title(stimulus))) %>%
+  select(-c(stimulus, window))
+```
+
+```{r}
+psd_4_plot <- psd_subject %>%
+  filter(sensor == 28) %>%
+  mutate(time_window = factor(time_window,
+                              levels = c('Pre Cue', 'Post Cue', 'Post Target')),
+         task = factor(task, levels = c('Odd/Even', 'Number/Letter')),
+         condition = factor(condition, labels = c('Repeat', 'Switch'))
+  )
+psd_plot <- ggplot(data = psd_4_plot,
+       aes(x = freq, y = psd, color = time_window, fill = time_window)) +
+  stat_summary(fun = "mean", geom = 'line') +
+  stat_summary(fun.data = "mean_cl_boot", geom = 'ribbon',
+               alpha = 0.30, color = NA) +
+  facet_grid(condition ~ task) +
+  scale_color_viridis_d(option = 'F', begin = 0, end = 0.6) +
+  scale_fill_viridis_d(option = 'F', begin = 0, end = 0.6) +
+  guides(fill = guide_legend(title.position = "top",
+                             label.position = "left",
+                             keywidth = 2,
+                             label.theme = element_text(size = 11)),
+         color = 'none') +
+  theme(legend.position = c(0.35, 0.85),) +
+  labs(x = 'Frequency (Hz)',
+       y = expression(Normalised~PSD[(V^2 / Hz)]),
+       fill = "Analysis time window"); psd_plot
+
+# save plot
+ggsave(filename = paste(paths$bids,
+                        'derivatives',
+                        'psd_plot.png',
+                        sep = '/'),
+       dpi = 300,
+       width = 8,
+       height = 5,
+       plot = psd_plot)
+```
+
+
+

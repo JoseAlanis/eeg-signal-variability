@@ -10,6 +10,7 @@ css: "styler.css"
 ---
 
 Created with `r R.version.string`
+
 ```{r, setup, include = FALSE}
 knitr::opts_chunk$set(class.source = "customCode",
                       class.output = "customOutput",
@@ -28,7 +29,7 @@ source('utils.R')
 load.package(c('rjson',
                'dplyr', 'purrr',
                'ggplot2',
-               'lme4', 'lmerTest', 'emmeans'))
+               'afex', 'report', 'emmeans'))
 
 # adjust the plotting theme
 theme_set(
@@ -88,14 +89,14 @@ rt_df <- rt_df %>%
         mutate(logrt = log(rt)) %>%
         mutate(zrt = (logrt - mean(logrt, na.rm = TRUE)) / sd(logrt, na.rm = TRUE)) %>%
         filter(abs(zrt) < 3.0) %>%
-        ungroup()  %>%
+        ungroup() %>%
         mutate(condition = stringr::str_to_title(behavior)) %>%
         select(subject, task, condition, rt, accuracy)
 ```
 
 # 3) Compute error rates
 
-```{r make-dfs-behavioral-measures}
+```{r make-dfs-behavioral-measures, message = FALSE}
 behavioral_measures <- rt_df %>%
         mutate(task = ifelse(task == "oddeven", "Odd/Even", "Number/Letter")) %>%
         mutate(acc = accuracy) %>%
@@ -133,177 +134,44 @@ errors <- errors %>%
 ```
 
 
-```{r}
-load.package('afex')
-ez1 <- aov_ez("subject", "error_rate_adj", errors,
-              within = c('task', 'condition'),
-              transformation = 'log',
-              type = 3); ez1
-
-m1 <- emmeans(ez1, ~ condition | task); m1
-contrast(regrid(m1, "response"), 'pairwise',
-         adjust = 'holm')
-
-
-afex_plot(ez1, "condition", "task",
-          emmeans_arg = list(options = list(tran= 'response')),
-          error = 'within')
-
-performance::check_model(ez1)
+```{r error-rates-model}
+errors_mxd <- mixed(
+        log(error_rate_adj) ~ task * condition + (task + condition | subject),
+        errors,
+        method = 'S',
+        check_contrasts = TRUE); errors_mxd
 ```
 
-```{r}
-# fit LMM
-errors_mod <- lmer(data = errors,
-                   error_rate_adj ~
-                           task * condition + (task + condition | subject),
-                   contrasts = list(condition = 'contr.treatment',
-                                    task = 'contr.treatment'))
-anova(errors_mod)
-allFit(errors_mod)
-confint(errors_mod)
-summary(errors_mod)
-```
-```{r}
-# fit LMM
-errors_mod_0 <- glmer(data = behavioral_measures,
-                      acc ~ task * condition + (task * condition | subject),
-                      family = binomial(link = "logit"),
-                      contrasts = list(condition = 'contr.sum',
-                                       task = 'contr.sum'))
-summary(errors_mod_0)
-allFit(errors_mod_0)
-```
-
-
-```{r}
-report::report_table(errors_mod_0,
+```{r error-rates-model-performance, results = 'asis'}
+report::report_table(errors_mxd$full_model,
                      include_effectsize = FALSE,
                      ci = 0.99)
 ```
 
+
 ```{r}
-performance::model_performance(errors_mod)
+errors_b0 <- emmeans(
+        errors_mxd, ~ 1,
+        type = 'response',
+        level = 0.99); errors_b0
 ```
 
 ```{r}
-# compute estimated marginal means for cue by probe interaction
-condition_errors <- emmeans(errors_mod, ~ condition,
-                            type = 'response',
-                            lmer.df = "Satterthwaite",
-                            lmerTest.limit = nrow(errors),
-                            level = 0.99); condition_errors
+errors_condition <- emmeans(
+        errors_mxd, ~ condition,
+        type = 'response',
+        level = 0.99); errors_condition
+
+cntr_err_condition <- contrast(
+        regrid(errors_condition, 'response'),
+        method = 'pairwise',
+        adjust = 'holm',
+        'pairwise'); cntr_err_condition
+
+confint(cntr_err_condition)
 ```
 
-```{r}
-# compute estimated marginal means for cue by probe interaction
-interaction_errors <- emmeans(errors_mod_0, ~ condition | task,
-                              type = 'response',
-                              # lmer.df = "Satterthwaite",
-                              lmerTest.limit = nrow(errors),
-                              level = 0.99); interaction_errors
-```
-
-```{r}
-contr_condition_errors <- contrast(
-        regrid(condition_errors, 'response'),
-        method = 'pairwise', adjust = 'holm'); contr_condition_errors
-confint(contr_condition_errors)
-```
-
-```{r}
-contr_interaction_errors <- contrast(
-        regrid(interaction_errors, 'response'),
-        method = 'pairwise', adjust = 'holm'); contr_interaction_errors
-confint(contr_interaction_errors)
-```
-
-
-```{r}
-# compute subject-level RT predictions
-predict_errors <- predict(errors_mod) %>%
-        data.frame() %>%
-        purrr::set_names("y_hat") %>%
-        mutate(y_hat = exp(y_hat)) %>%
-        bind_cols(errors)
-
-# text size
-axis_text_size <- 15
-axis_title_size <- 15
-strip_text_size <- 15
-subtitle_size <- 17
-pd <- position_dodge(0.15)
-# create correct RT plot for A cues
-predicted_errors_plot <-
-        ggplot(data = predict_errors,
-               aes(x = condition, y = y_hat,
-                   group = subject)) +
-                geom_line(alpha = 0.75, linewidth = 0.5, position = pd,
-                          color = 'gray80', show.legend = FALSE) +
-                geom_jitter(alpha = 0.75, size = 1.0, stroke = 0.25,
-                            color = 'gray80', position = pd,
-                            show.legend = FALSE) +
-                geom_ribbon(data = data.frame(interaction_errors),
-                            alpha = 0.75,
-                            fill = '#f4a582',
-                            inherit.aes = FALSE,
-                            aes(x = condition, y = response, group = 1,
-                                ymin = lower.CL, ymax = upper.CL),
-                            show.legend = TRUE) +
-                geom_line(data = data.frame(interaction_errors),
-                          linewidth = 0.8, color = 'black', inherit.aes = FALSE,
-                          aes(x = condition, y = response, group = 1)) +
-                geom_point(data = data.frame(interaction_errors),
-                           size = 2.0, color = 'black', inherit.aes = FALSE,
-                           aes(x = condition, y = response, group = 1)) +
-                labs(subtitle = "Error Rate (ER) by Task and Condition",
-                     y = expression(paste(widehat(ER)[italic(i)], ' (0 to 1)')),
-                     x = 'Condition',
-                     fill = '99% CI:', color = NULL) +
-                coord_cartesian(ylim = c(0.0, 0.2)) +
-                scale_y_continuous(breaks = seq(0, 0.2, 0.05)) +
-                scale_color_manual(values = c('gray80', 'gray80')) +
-                scale_x_discrete(expand = c(0.15, 0.15)) +
-                theme(plot.subtitle = element_text(size = subtitle_size),
-                      strip.text = element_text(size = strip_text_size),
-                      axis.text = element_text(size = axis_text_size),
-                      axis.title.x = element_text(size = axis_title_size,
-                                                  margin = margin(t = 15)),
-                      axis.title.y = element_text(size = axis_title_size,
-                                                  margin = margin(r = 15)),
-                      legend.position = c(0.20, 0.90),
-                      legend.key.size = unit(0.5, 'cm'),
-                      plot.tag = element_text(size = 20)) +
-                facet_wrap(~ task, ncol = 2) +
-                # geom_segment(aes(x = 1.1, xend = 1.9, y = 150, yend =150),
-                #              color = 'black', linewidth = rel(0.75)) +
-                # geom_segment(aes(x = 1.1, xend = 1.1, y = 150, yend = 160),
-                #              color = 'black', linewidth = rel(0.75)) +
-                # geom_segment(aes(x = 1.9, xend = 1.9, y = 150, yend = 160),
-                #              color = 'black', linewidth = rel(0.75)) +
-                # geom_text(data = data_seg_correct,
-                #           inherit.aes = FALSE,
-                #           aes(x = x, y = y, label = label),
-                #           size = 4.0) +
-                guides(fill = guide_legend(title.position = "top",
-                                           label.position = "left",
-                                           keywidth = 2,
-                                           label.theme = element_text(size = 11)),
-                       color = 'none'); predicted_errors_plot
-
-# save plot
-ggsave(filename = paste(paths$bids,
-                        'derivatives',
-                        'predicted_errors_plot.png',
-                        sep = '/'),
-       dpi = 300,
-       width = 8,
-       height = 8,
-       plot = predicted_errors_plot)
-```
-
-
-
+# Reaction time
 
 ```{r plot-rt}
 rt_dist <- ggplot(data = behavioral_measures,
@@ -327,79 +195,78 @@ ggsave(filename = paste(paths$bids,
 
 
 ```{r}
+rt_correct <- behavioral_measures %>%
+        filter(accuracy == 'Correct')
 
-
-# compute number of errors per condition
-errors <- rt %>%
-  filter(reaction == 'Incorrect') %>%
-  group_by(subject, cue_probe) %>%
-  mutate(n_errors = sum(!is.na(rt))) %>%
-  summarise(n_errors = mean(n_errors)) %>%
-  arrange(subject, cue_probe)
-
-# merge rt_data frames
-errors <- total %>%
-  left_join(., errors, by = c('subject', 'cue_probe'))
-# replace missing values with zeros
-errors[is.na(errors)] <- 0
-
-# log-linear correction for error rates equal to 0.0 or 1.0
-errors <- errors %>%
-  mutate(error_rate_adj =(n_errors+0.5)/(n_trials+1),
-         error_rate = ifelse(n_errors == 0, 0, n_errors/n_trials))
-```
-
-
-
-
-
-
-
-```{r}
-behavioral_measures <- behavioral_measures %>%
-  filter(rt > 0.1) %>%
-  mutate(accuracy = factor(accuracy),
-         subject = factor(subject),
-         condition = factor(condition))
-```
-
-```{r}
 # fit LMM
-rt_mod <- lmer(data = behavioral_measures,
-               log(rt) ~ condition * accuracy +
-                 (condition * accuracy | subject),
-               contrasts = list(condition = 'contr.sum',
-                                accuracy = 'contr.sum'),
-               control = lmerControl(optimizer = "bobyqa"),
-               REML = FALSE)
+rt_mxd <- mixed(
+        log(rt) ~ task * condition + (task * condition | subject),
+        rt_correct,
+        method = 'S',
+        check_contrasts = TRUE,
+        control = lmerControl(optimizer="bobyqa")); rt_mxd
 ```
 ```{r}
-anova(rt_mod)
+report_table(rt_mxd$full_model,
+             include_effectsize = FALSE,
+             ci = 0.99)
 ```
 
 
 ```{r}
 # compute estimated marginal means for cue by probe interaction
-interaction <- emmeans(rt_mod, ~ condition * accuracy,
-                       type = 'response',
-                       lmer.df = "satterthwaite",
-                       lmerTest.limit = nrow(behavioral_measures),
-                       level = 0.99); interaction
+rt_b0 <- emmeans(rt_mxd, ~ 1,
+                 type = 'response',
+                 lmer.df = "satterthwaite",
+                 lmerTest.limit = nrow(rt_correct),
+                 level = 0.99); rt_b0
 ```
 
 ```{r}
-contrast(regrid(interaction, 'response'),
-         method = 'pairwise', adjust = 'holm')
+rt_condition <- emmeans(
+        rt_mxd, ~ condition,
+        type = 'response',
+        lmer.df = "satterthwaite",
+        lmerTest.limit = nrow(rt_correct),
+        level = 0.99); rt_condition
+
+cntr_rt_condition <- contrast(
+        regrid(rt_condition, 'response'),
+        method = 'pairwise',
+        adjust = 'holm',
+        'pairwise'); cntr_rt_condition
+
+confint(cntr_rt_condition)
+```
+
+```{r}
+rt_interaction <- emmeans(
+        rt_mxd, ~ condition | task,
+        type = 'response',
+        lmer.df = "satterthwaite",
+        lmerTest.limit = nrow(rt_correct),
+        level = 0.99); rt_interaction
+
+cntr_rt_interaction <- contrast(
+        regrid(rt_interaction, 'response'),
+        method = 'pairwise',
+        adjust = 'holm',
+        'pairwise'); cntr_rt_interaction
+
+confint(cntr_rt_interaction)
 ```
 
 
 ```{r}
 # compute subject-level RT predictions
-predict_rt <- predict(rt_mod) %>%
+predict_rt <- predict(rt_mxd$full_model) %>%
   data.frame() %>%
   purrr::set_names("y_hat") %>%
   mutate(y_hat = exp(y_hat)) %>%
-  bind_cols(behavioral_measures)
+  bind_cols(rt_correct) %>%
+        mutate(task = factor(task,
+                             levels = c('Odd/Even', 'Number/Letter'),
+                             labels = c('Session One', 'Session Two')))
 
 # text size
 axis_text_size <- 15
@@ -408,64 +275,72 @@ strip_text_size <- 15
 subtitle_size <- 17
 pd <- position_dodge(0.15)
 # create correct RT plot for A cues
+
+data_intercation <- data.frame(rt_interaction) %>%
+        mutate(task = factor(task,
+                             levels = c('Odd/Even', 'Number/Letter'),
+                             labels = c('Session One', 'Session Two')))
+
 predicted_rt_plot <-
-  ggplot(data = predict_rt,
-         aes(x = accuracy, y = y_hat  * 1000,
-             color = condition, fill = condition,
-             group = subject)) +
-    geom_line(alpha = 0.75, linewidth = 0.5, position = pd, show.legend = FALSE) +
-    geom_jitter(alpha = 0.75, size = 1.0, stroke = 0.25,
-                position = pd, show.legend = FALSE) +
-    geom_ribbon(data = data.frame(interaction),
-                alpha = 0.75,
-                inherit.aes = FALSE,
-                aes(x = accuracy, y = response * 1000,
-                    fill = condition, group = condition,
-                    ymin = lower.CL * 1000, ymax = upper.CL * 1000),
-                show.legend = TRUE) +
-    geom_line(data = data.frame(interaction),
-              linewidth = 0.8, color = 'black', inherit.aes = FALSE,
-              aes(x = accuracy, y = response * 1000, group = condition)) +
-    geom_point(data = data.frame(interaction),
-               size = 2.0, color = 'black', inherit.aes = FALSE,
-               aes(x = accuracy, y = response * 1000, group = condition)) +
-    facet_wrap(~ condition, ncol = 2, scales = 'free') +
-    labs(subtitle = "Odd/Even Task RT:",
-         y = expression(paste(widehat(RT)[italic(i)], ' (ms.)')),
-         x = 'Probe',
-         fill = '99% CI:', color = NULL) +
-    coord_cartesian(ylim = c(400, 1800)) +
-    scale_y_continuous(breaks = seq(400, 1800, 200)) +
-    scale_color_manual(values = c('gray80', 'gray80')) +
-    scale_fill_manual(values = c('Repeat' = '#92c5de', 'Switch' = '#f4a582'),
-                      breaks = c('Repeat', 'Switch'),
-                      labels = c('Repeat', 'Switch')) +
-    scale_x_discrete(expand = c(0.15, 0.15)) +
-    theme(plot.subtitle = element_text(size = subtitle_size),
-          strip.text = element_text(size = strip_text_size),
-          axis.text = element_text(size = axis_text_size),
-          axis.title.x = element_text(size = axis_title_size,
-                                      margin = margin(t = 15)),
-          axis.title.y = element_text(size = axis_title_size,
-                                      margin = margin(r = 15)),
-          legend.position = c(0.20, 0.90),
-          legend.key.size = unit(0.5, 'cm'),
-          plot.tag = element_text(size = 20)) +
-    geom_segment(aes(x = 1.1, xend = 1.9, y = 150, yend =150),
-                 color = 'black', linewidth = rel(0.75)) +
-    geom_segment(aes(x = 1.1, xend = 1.1, y = 150, yend = 160),
-                 color = 'black', linewidth = rel(0.75)) +
-    geom_segment(aes(x = 1.9, xend = 1.9, y = 150, yend = 160),
-                 color = 'black', linewidth = rel(0.75)) +
-    # geom_text(data = data_seg_correct,
-    #           inherit.aes = FALSE,
-    #           aes(x = x, y = y, label = label),
-    #           size = 4.0) +
-    guides(fill = guide_legend(title.position = "top",
-                               label.position = "left",
-                               keywidth = 2,
-                               label.theme = element_text(size = 11)),
-           color = 'none'); predicted_rt_plot
+        ggplot(data = predict_rt,
+               aes(x = condition, y = y_hat * 1000,
+                   color = task, fill = task,
+                   group = subject)) +
+                geom_line(alpha = 0.75, linewidth = 0.5,
+                          position = pd, show.legend = FALSE) +
+                geom_jitter(alpha = 0.75, size = 1.0, stroke = 0.25,
+                            position = pd, show.legend = FALSE) +
+                geom_ribbon(data = data_intercation,
+                            alpha = 0.75,
+                            inherit.aes = FALSE,
+                            aes(x = condition, y = response * 1000,
+                                fill = task, group = task,
+                                ymin = lower.CL * 1000, ymax = upper.CL * 1000),
+                            show.legend = TRUE) +
+                geom_line(data = data_intercation,
+                          linewidth = 0.8, color = 'black', inherit.aes = FALSE,
+                          aes(x = condition, y = response * 1000, group = task)) +
+                geom_point(data = data_intercation,
+                           size = 2.0, color = 'black', inherit.aes = FALSE,
+                           aes(x = condition, y = response * 1000, group = task)) +
+                facet_wrap(~task, ncol = 2, scales = 'free') +
+                labs(subtitle = "Estimated RT:",
+                     y = expression(paste(widehat(RT)[italic(i)], ' (ms.)')),
+                     x = 'Condition',
+                     fill = '99% CI:', color = NULL) +
+                coord_cartesian(ylim = c(400, 1800)) +
+                scale_y_continuous(breaks = seq(400, 1800, 200)) +
+                scale_color_manual(values = c('gray80', 'gray80')) +
+                scale_fill_manual(values = c('Session One' = '#92c5de',
+                                             'Session Two' = '#f4a582'),
+                                  breaks = c('Session One', 'Session Two'),
+                                  labels = c('Session One', 'Session Two')) +
+                scale_x_discrete(expand = c(0.15, 0.15)) +
+                theme(plot.subtitle = element_text(size = subtitle_size),
+                      strip.text = element_text(size = strip_text_size),
+                      axis.text = element_text(size = axis_text_size),
+                      axis.title.x = element_text(size = axis_title_size,
+                                                  margin = margin(t = 15)),
+                      axis.title.y = element_text(size = axis_title_size,
+                                                  margin = margin(r = 15)),
+                      legend.position = c(0.20, 0.90),
+                      legend.key.size = unit(0.5, 'cm'),
+                      plot.tag = element_text(size = 20)) +
+                geom_segment(aes(x = 1.1, xend = 1.9, y = 150, yend = 150),
+                             color = 'black', linewidth = rel(0.75)) +
+                geom_segment(aes(x = 1.1, xend = 1.1, y = 150, yend = 160),
+                             color = 'black', linewidth = rel(0.75)) +
+                geom_segment(aes(x = 1.9, xend = 1.9, y = 150, yend = 160),
+                             color = 'black', linewidth = rel(0.75)) +
+                # geom_text(data = data_seg_correct,
+                #           inherit.aes = FALSE,
+                #           aes(x = x, y = y, label = label),
+                #           size = 4.0) +
+                guides(fill = guide_legend(title.position = "top",
+                                           label.position = "left",
+                                           keywidth = 2,
+                                           label.theme = element_text(size = 11)),
+                       color = 'none'); predicted_rt_plot
 
 # save plot
 ggsave(filename = paste(paths$bids,
@@ -477,6 +352,8 @@ ggsave(filename = paste(paths$bids,
        height = 8,
        plot = predicted_rt_plot)
 ```
+
+
 
 
 

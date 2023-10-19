@@ -1,0 +1,16 @@
+.customCode {
+background-color: #fffafa;
+border: none;
+}
+
+.customOutput {
+background-color: #ffffff;
+border: none;
+}
+
+.customWarning {
+background-color: #ffffff;
+color: firebrick;
+font-weight: bold;
+border: none;
+}
