@@ -22,7 +22,7 @@ load.package <- function(package, repos) {
     }
     install.packages(
       missing,
-      lib="/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env",
+      lib = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env",
       dependencies = TRUE,
       repos = repos
     )

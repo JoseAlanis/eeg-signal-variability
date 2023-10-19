@@ -2,29 +2,11 @@
 source('utils.R')
 
 load.package(
-  c('parallel', 'foreach', 'optparse')
+  c('parallel', 'foreach', 'optparse',
+    'rjson', 'dplyr', 'tidyr', 'stringr',
+    'afex', 'optimx',
+    'performance', 'emmeans', 'effectsize')
 )
-
-# parallel settings
-n.cores <- 11
-my.cluster <- parallel::makeCluster(
-  n.cores,
-  type = "PSOCK"
-)
-# print(my.cluster)
-
-# register it to be used by %dopar%
-doParallel::registerDoParallel(cl = my.cluster)
-
-#c heck if it is registered (optional)
-# foreach::getDoParRegistered()
-
-# function for combining output of foreach
-comb <- function(List1, List2) {
-  output_a <- c(List1[[1]], List2[[1]])
-  output_b <- c(List1[[2]], List2[[2]])
-  return(list(contrasts = output_a, effects = output_b))
-}
 
 # parse arguments --------------------------------------------------------------
 option_list <- list(
@@ -35,6 +17,27 @@ option_list <- list(
               default = 1
   )
 )
+
+# parallel settings ------------------------------------------------------------
+n.cores <- 11
+my.cluster <- parallel::makeCluster(
+  n.cores,
+  type = "PSOCK"
+)
+# print(my.cluster)
+
+# register it to be used by %dopar%
+doParallel::registerDoParallel(cl = my.cluster)
+
+# check if it is registered (optional)
+# foreach::getDoParRegistered()
+
+# function for combining output of foreach
+comb <- function(List1, List2) {
+  output_a <- c(List1[[1]], List2[[1]])
+  output_b <- c(List1[[2]], List2[[2]])
+  return(list(contrasts = output_a, effects = output_b))
+}
 
 # save all the options variables in a list -------------------------------------
 opt <- parse_args(
@@ -162,18 +165,18 @@ eff_sizes <- sensor_results[1] %>%
 sensor_contrasts <- rbind(sensor_contrasts, eff_sizes)
 
 # create paths for results storage
-fpath_single_trial_var <- paste(paths$bids,
-                                'derivatives',
-                                'analysis_dataframes',
-                                'sensor_constrats_st.rds',
-                                sep = '/')
-dir.create(dirname(file.path(fpath_single_trial_var)), showWarnings = FALSE)
-saveRDS(eff_sizes, file = fpath_single_trial_var)
+fpath_contrasts_var <- paste(paths$bids,
+                             'derivatives',
+                             'analysis_dataframes',
+                             paste0('sensor_', sensor_n, '_constrats_st.rds'),
+                             sep = '/')
+dir.create(dirname(file.path(fpath_contrasts_var)), showWarnings = FALSE)
+saveRDS(eff_sizes, file = fpath_contrasts_var)
 
-fpath_single_trial_var <- paste(paths$bids,
-                                'derivatives',
-                                'analysis_dataframes',
-                                'sensor_effects_st.rds',
-                                sep = '/')
-dir.create(dirname(file.path(fpath_single_trial_var)), showWarnings = FALSE)
-saveRDS(fits, file = fpath_single_trial_var)
+fpath_effects_var <- paste(paths$bids,
+                           'derivatives',
+                           'analysis_dataframes',
+                           paste0('sensor_', sensor_n, '_effects_st.rds'),
+                           sep = '/')
+dir.create(dirname(file.path(fpath_effects_var)), showWarnings = FALSE)
+saveRDS(fits, file = fpath_effects_var)
