@@ -2,7 +2,7 @@
 source('utils.R')
 
 load.package(
-  c('parallel', 'foreach', 'optparse',
+  c('foreach', 'optparse',
     'rjson', 'dplyr', 'tidyr', 'stringr',
     'afex', 'optimx',
     'performance', 'emmeans', 'effectsize')
@@ -10,7 +10,7 @@ load.package(
 
 # parse arguments --------------------------------------------------------------
 option_list <- list(
-  make_option(c("--sensor_n"),
+  make_option("--sensor_n",
               type = "integer",
               help = "Which sensor should be analysed",
               action = "store",
