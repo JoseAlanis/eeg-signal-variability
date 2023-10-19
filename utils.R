@@ -12,7 +12,10 @@
 load.package <- function(package, repos) {
 
   # list of packages missing
-  missing <- package[!package %in% installed.packages()[, 'Package']]
+  pkgs <- installed.packages(
+    lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env"
+  )
+  missing <- package[!package %in% pkgs[, 'Package']]
 
   # check wich packages are not intalled and install them
   if (!is.null(missing)) {
