@@ -46,13 +46,13 @@ jobs <- opt$jobs
 
 # parallel settings ------------------------------------------------------------
 n.cores <- jobs
-my.cluster <- parallel::makeCluster(
+my.cluster <- makeCluster(
   n.cores,
   type = "PSOCK"
 )
 
 # register it to be used by %dopar%
-doParallel::registerDoParallel(cl = my.cluster)
+registerDoParallel(cl = my.cluster)
 
 # check if it is registered (optional)
 # foreach::getDoParRegistered()
@@ -93,8 +93,8 @@ sensor <- signal_variability_st %>%
   pivot_longer(cols = permutation_entropy:spectral_entropy,
                names_to = "var_meas", values_to = "var") %>%
   filter(!is.na(var)) %>%
-  mutate(tw = paste(stringr::str_to_title(window),
-                    stringr::str_to_title(stimulus))) %>%
+  mutate(tw = paste(str_to_title(window),
+                    str_to_title(stimulus))) %>%
   mutate(tw = factor(tw, levels = c('Pre Cue', 'Post Cue', 'Post Target')),
          task = factor(task, levels = c('Odd/Even', 'Number/Letter')),
          condition = factor(condition, labels = c('Repeat', 'Switch'))
@@ -118,6 +118,8 @@ sensor_results <- foreach(
   require(dplyr)
   require(afex)
   require(emmeans)
+  require(effectsize)
+  require(performance)
 
   # get measure of interest
   dat <- sensor %>%
@@ -133,14 +135,14 @@ sensor_results <- foreach(
     all_fit = TRUE
   )
 
-  o2 <- effectsize::F_to_omega2(f = var_mxd$anova_table$F,
-                                df = var_mxd$anova_table$`num Df`,
-                                df_error = var_mxd$anova_table$`den Df`,
-                                ci = 0.99)
+  o2 <- F_to_omega2(f = var_mxd$anova_table$F,
+                    df = var_mxd$anova_table$`num Df`,
+                    df_error = var_mxd$anova_table$`den Df`,
+                    ci = 0.99)
   o2 <- data.frame(o2)
 
   # model performance
-  df_model_fit <- performance::model_performance(var_mxd$full_model) %>%
+  df_model_fit <- model_performance(var_mxd$full_model) %>%
     data.frame() %>%
     mutate(predictor = row.names(var_mxd$anova_table),
            F = var_mxd$anova_table$F,
@@ -156,7 +158,7 @@ sensor_results <- foreach(
 
   # compute contrasts
   var_eff <- emmeans(
-    var_mxd$full_model, ~ tw,
+    var_mxd$full_model, ~tw,
     type = 'response',
     lmer.df = "satterthwaite",
     lmerTest.limit = nrow(dat),
@@ -166,7 +168,7 @@ sensor_results <- foreach(
   contr_var_eff <- data.frame(contr_var_eff)
 
   # compute effect sizes
-  contr_d <- effectsize::t_to_d(
+  contr_d <- t_to_d(
     t = contr_var_eff$t.ratio,
     df = contr_var_eff$df,
     paired = TRUE,
@@ -194,8 +196,8 @@ eff_sizes <- sensor_results[1] %>%
   bind_rows()
 
 # save tables ------------------------------------------------------------------
-task_i <- stringr::str_remove(
-  stringr::str_to_lower("Number/Letter"),
+task_i <- str_remove(
+  str_to_lower("Number/Letter"),
   '\\/'
 )
 # create paths for results storage
