@@ -9,23 +9,27 @@
 #'        Default is the Goettingen (Germany) mirror.
 #'
 #' @return A logical vector indicating successful loading of packages.
-load.package <- function(package, repos) {
+load.package <- function(package, repos, lib) {
+
+  if (missing(lib)) {
+    lib <- .libPaths()[1]
+  }
 
   # list of packages missing
   pkgs <- installed.packages(
-    lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env"
+    lib.loc = lib
   )
   missing <- package[!package %in% pkgs[, 'Package']]
 
   # check wich packages are not intalled and install them
   if (!is.null(missing)) {
     if (missing(repos)) {
-      # use Goettingen (Germany) mirror as default
+      # use Erlangen (Germany) mirror as default
       repos <- 'https://ftp.fau.de/cran/'
     }
     install.packages(
       missing,
-      lib = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env",
+      lib = lib,
       dependencies = TRUE,
       repos = repos
     )
@@ -34,7 +38,7 @@ load.package <- function(package, repos) {
   # load all packages
   sapply(package, require,
          character.only = TRUE ,
-         lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env"
+         lib.loc = lib
   )
 }
 
