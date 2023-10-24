@@ -1,5 +1,5 @@
 ---
-title: "More than noise?: Analysis of reaction time (RT)."
+title: "More than noise?: Analysis of behavioural data (RT & error rates)."
 author: "José C. García Alanis"
 date:  "`r Sys.Date()`"
 output:
@@ -26,17 +26,24 @@ source('utils.R')
 
 ```{r, session-preferences, include = FALSE}
 # packages needed for analyses
-load.package(c('rjson',
-               'dplyr', 'purrr',
-               'ggplot2',
-               'afex', 'report', 'emmeans'))
+load.package(
+  c('rjson',
+    'dplyr', 'purrr',
+    'ggplot2',
+    'afex', 'report', 'emmeans')
+)
 
 # adjust the plotting theme
 theme_set(
-  theme_linedraw() +
-    theme(panel.grid = element_blank(),
-          strip.background = element_rect(fill = "grey92", color = "grey92"),
-          strip.text = element_text(color = "black", size = 10))
+        theme_linedraw() +
+                theme(panel.grid = element_blank(),
+                      strip.background = element_rect(
+                        fill = "grey92",
+                        olor = "grey92"),
+                      strip.text = element_text(
+                        color = "black",
+                        size = 10)
+                )
 )
 ```
 
@@ -68,7 +75,7 @@ for (task in c('oddeven', 'numberletter')) {
   rt_df <- rbind(rt_df, rt)
 }
 
-
+# tidy up
 rm(fpath_rt, rt_files, rt)
 ```
 
@@ -129,8 +136,7 @@ errors[is.na(errors)] <- 0
 # log-linear correction for error rates equal to 0.0 or 1.0
 errors <- errors %>%
         mutate(error_rate_adj = (n_errors + 0.5) / (n_trials + 1),
-               error_rate = ifelse(n_errors == 0, 0, n_errors / n_trials)) %>%
-        mutate(log_error_rate = log(error_rate_adj))
+               error_rate = ifelse(n_errors == 0, 0, n_errors / n_trials))
 ```
 
 
@@ -175,12 +181,12 @@ confint(cntr_err_condition)
 
 ```{r plot-rt}
 rt_dist <- ggplot(data = behavioral_measures,
-       aes(x = rt)) +
-  geom_histogram(bins = 100) +
-  scale_x_continuous(breaks = seq(0, 3, 0.5)) +
-  labs(y = 'Count', x = 'RT') +
-  facet_grid(rows = vars(condition),
-             cols = vars(accuracy)); rt_dist
+                  aes(x = rt)) +
+        geom_histogram(bins = 100) +
+        scale_x_continuous(breaks = seq(0, 3, 0.5)) +
+        labs(y = 'Count', x = 'RT') +
+        facet_grid(rows = vars(condition),
+                   cols = vars(accuracy)); rt_dist
 
 # save plot
 ggsave(filename = paste(paths$bids,
@@ -260,10 +266,10 @@ confint(cntr_rt_interaction)
 ```{r}
 # compute subject-level RT predictions
 predict_rt <- predict(rt_mxd$full_model) %>%
-  data.frame() %>%
-  purrr::set_names("y_hat") %>%
-  mutate(y_hat = exp(y_hat)) %>%
-  bind_cols(rt_correct) %>%
+        data.frame() %>%
+        purrr::set_names("y_hat") %>%
+        mutate(y_hat = exp(y_hat)) %>%
+        bind_cols(rt_correct) %>%
         mutate(task = factor(task,
                              levels = c('Odd/Even', 'Number/Letter'),
                              labels = c('Session One', 'Session Two')))
