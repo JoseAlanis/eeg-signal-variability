@@ -23,18 +23,14 @@ import numpy as np
 
 from mne import read_epochs
 from mne.utils import logger
-from mne.viz import plot_topomap, plot_brain_colorbar
+from mne.viz import plot_topomap
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from statsmodels.stats.multitest import fdrcorrection, multipletests
-
 # all parameters are defined in config.py
 from config import (
-    FPATH_DERIVATIVES,
-    MISSING_FPATH_BIDS_MSG
-)
+    FPATH_DERIVATIVES)
 
 # %%
 # default settings (use subject 1, don't overwrite output files)
@@ -78,7 +74,7 @@ for fpath in FPATH_FITS_ODDEVEN:
     sj = re.search(r'\d+', os.path.basename(fpath)).group(0)
     fits[int(sj), ...] = pyreadr.read_r(fpath)[None].o_sq
     # p_vals[int(sj), ...] = pyreadr.read_r(fpath)[None].p
-    p_vals[int(sj), ...] = pyreadr.read_r(fpath)[None].o_sq_CI_low > 0.05
+    p_vals[int(sj), ...] = pyreadr.read_r(fpath)[None].o_sq_CI_low > 0.06
 
 # # correct p-values
 # p_vals = multipletests(p_vals.flatten(), method='bonferroni')[0]
@@ -158,7 +154,7 @@ fig.colorbar(
     label=r'Effect size ($\omega^2$)',
 )
 ax['name'].set(yticks=[], yticklabels=[], xticks=[], xticklabels=[])
-ax['name'].annotate('Task:\nOdd/Even', (0.1, 0.5), fontsize=16, color='k')
+ax['name'].annotate('Task:\nOdd/Even', (0.1, 0.5), fontsize=14, color='k')
 ax['name'].spines['right'].set_visible(False)
 ax['name'].spines['top'].set_visible(False)
 ax['name'].spines['left'].set_visible(False)
@@ -214,7 +210,8 @@ fig.colorbar(
     label=r"Effect size (Cohen's $d$)",
 )
 ax['name'].set(yticks=[], yticklabels=[], xticks=[], xticklabels=[])
-ax['name'].annotate('Contrast:\npost cue - pre cue', (0.1, 0.5), fontsize=12, color='k')
+ax['name'].annotate('Change:\nBaseline to Cue', (0.1, 0.5),
+                    fontsize=12, color='k')
 ax['name'].spines['right'].set_visible(False)
 ax['name'].spines['top'].set_visible(False)
 ax['name'].spines['left'].set_visible(False)
@@ -225,7 +222,7 @@ plt.close('all')
 fig.savefig('./measures_d_pre_cue-post_cue.png', dpi=300)
 
 # %%
-cmap_d = mpl.cm.PiYG_r
+cmap_d = mpl.cm.RdBu_r
 bounds = [-1.5, -1.25, -1.0, -0.75, -0.5, -0.25,  0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
 norm = mpl.colors.BoundaryNorm(bounds, cmap.N, extend='both')
 
@@ -271,7 +268,7 @@ fig.colorbar(
     label=r"Effect size (Cohen's $d$)",
 )
 ax['name'].set(yticks=[], yticklabels=[], xticks=[], xticklabels=[])
-ax['name'].annotate('Contrast:\npost target - post cue', (0.1, 0.5), fontsize=12, color='k')
+ax['name'].annotate('Change:\nCue to Target', (0.1, 0.5), fontsize=12, color='k')
 ax['name'].spines['right'].set_visible(False)
 ax['name'].spines['top'].set_visible(False)
 ax['name'].spines['left'].set_visible(False)
