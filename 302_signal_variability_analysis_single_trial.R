@@ -4,16 +4,7 @@
 # Notes:  R script can be ran as job on HPC. Takes args `sensor_n`, `task_i`,
 #         and `jobs`
 
-# get utility functions --------------------------------------------------------
-source('utils.R')
-
-load.package(
-  c('foreach', 'optparse',
-    'rjson', 'dplyr', 'tidyr', 'stringr',
-    'afex', 'optimx',
-    'performance', 'emmeans', 'effectsize'),
-  lib = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/"
-)
+require('optparse')
 
 # parse arguments --------------------------------------------------------------
 option_list <- list(
@@ -29,6 +20,12 @@ option_list <- list(
               action = "store",
               default = "Odd/Even"
   ),
+  make_option("--lib",
+              type = "character",
+              help = "Path to R-library",
+              action = "store",
+              default = "default"
+  ),
   make_option("--jobs",
               type = "integer",
               help = "How many cores should be used in parallel?",
@@ -43,7 +40,24 @@ opt <- parse_args(
 )
 sensor_n <- opt$sensor_n
 task_i <- opt$task_i
+lib <- opt$lib
 jobs <- opt$jobs
+
+if (lib == "default") {
+  lib <- .libPaths()[1]
+}
+
+
+# get utility functions --------------------------------------------------------
+source('utils.R')
+
+load.package(
+  c('foreach',
+    'rjson', 'dplyr', 'tidyr', 'stringr',
+    'afex', 'optimx',
+    'performance', 'emmeans', 'effectsize'),
+  lib = lib
+)
 
 # parallel settings ------------------------------------------------------------
 n.cores <- jobs
@@ -111,16 +125,16 @@ message(
 )
 
 sensor_results <- foreach(
-  meas = measures,
+  meas = measures[1:2],
   .combine = 'comb',
   .init = list(list(), list())
 ) %dopar% {
 
-  require(dplyr, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
-  require(afex, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
-  require(emmeans, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
-  require(effectsize, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
-  require(performance, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
+  require(dplyr, lib.loc = lib)
+  require(afex, lib.loc = lib)
+  require(emmeans, lib.loc = lib)
+  require(effectsize, lib.loc = lib)
+  require(performance, lib.loc = lib)
 
   # get measure of interest
   dat <- sensor %>%
@@ -129,37 +143,46 @@ sensor_results <- foreach(
 
   # fit LMM
   var_mxd <- mixed(
-    var ~ tw + (tw | subject),
+    var ~ tw * condition + (tw | subject:condition),
     dat,
     method = 'S',
     check_contrasts = TRUE,
-    all_fit = TRUE
+    all_fit = TRUE,
+    expand_re = FALSE,
+    control = lmerControl(optCtrl = list(maxfun = 1e6))
   )
 
-  o2 <- F_to_omega2(f = var_mxd$anova_table$F,
-                    df = var_mxd$anova_table$`num Df`,
-                    df_error = var_mxd$anova_table$`den Df`,
-                    ci = 0.99)
-  o2 <- data.frame(o2)
+  # model fit
+  mod_perf <- performance::model_performance(var_mxd$full_model) %>%
+    data.frame()
 
-  # model performance
-  df_model_fit <- model_performance(var_mxd$full_model) %>%
+  # effect sizes
+  o2 <- effectsize::F_to_omega2(f = var_mxd$anova_table$F,
+                                df = var_mxd$anova_table$`num Df`,
+                                df_error = var_mxd$anova_table$`den Df`,
+                                ci = 0.99,
+                                alternative = "two.sided")
+
+  # save model fit in data frame for export
+  df_model_fit <- o2 %>%
     data.frame() %>%
     mutate(predictor = row.names(var_mxd$anova_table),
            F = var_mxd$anova_table$F,
            p = var_mxd$anova_table$`Pr(>F)`,
-           o_sq = o2$Omega2_partial,
-           o_sq_ci = o2$CI,
-           o_sq_CI_low = o2$CI_low,
-           o_sq_CI_high = o2$CI_high,
            optimiser = attr(var_mxd$full_model, 'optinfo')$optimizer,
            sensor = sensor_n + 1,
            measure = meas,
-           task = task_i)
+           task = task_i,
+           AICc = mod_perf$AIC,
+           AICc = mod_perf$AICc,
+           BIC = mod_perf$BIC,
+           R2_conditional = mod_perf$R2_conditional,
+           R2_marginal = mod_perf$R2_marginal,
+           ICC = mod_perf$ICC)
 
-  # compute contrasts
+  # compute contrasts ** time window **
   var_eff <- emmeans(
-    var_mxd$full_model, ~tw,
+    var_mxd$full_model, ~ tw,
     type = 'response',
     lmer.df = "satterthwaite",
     lmerTest.limit = nrow(dat),
@@ -169,7 +192,7 @@ sensor_results <- foreach(
   contr_var_eff <- data.frame(contr_var_eff)
 
   # compute effect sizes
-  contr_d <- t_to_d(
+  contr_d_tw <- effectsize::t_to_d(
     t = contr_var_eff$t.ratio,
     df = contr_var_eff$df,
     paired = TRUE,
@@ -177,12 +200,70 @@ sensor_results <- foreach(
   )
 
   # make effect sizes table
-  contr_d <- contr_d %>%
+  contr_d_tw <- contr_d_tw %>%
     data.frame() %>%
     mutate(contrast = contr_var_eff$contrast,
            sensor = sensor_n + 1,
-           measure = meas)
+           measure = meas,
+           task = task_i)
 
+  # compute contrasts ** condition **
+  var_eff <- emmeans(
+    var_mxd$full_model, ~ condition,
+    type = 'response',
+    lmer.df = "satterthwaite",
+    lmerTest.limit = nrow(dat),
+    level = 0.99
+  )
+  contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
+  contr_var_eff <- data.frame(contr_var_eff)
+
+  # compute effect sizes
+  contr_d_cond <- effectsize::t_to_d(
+    t = contr_var_eff$t.ratio,
+    df = contr_var_eff$df,
+    paired = TRUE,
+    ci = 0.99
+  )
+
+  # make effect sizes table
+  contr_d_cond <- contr_d_cond %>%
+    data.frame() %>%
+    mutate(contrast = contr_var_eff$contrast,
+           sensor = sensor_n + 1,
+           measure = meas,
+           task = task_i)
+
+  # compute contrasts ** interaction **
+  var_eff <- emmeans(
+    var_mxd$full_model, ~ tw | condition,
+    type = 'response',
+    lmer.df = "satterthwaite",
+    lmerTest.limit = nrow(dat),
+    level = 0.99
+  )
+  contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
+  contr_var_eff <- data.frame(contr_var_eff)
+
+  # compute effect sizes
+  contr_d_int <- effectsize::t_to_d(
+    t = contr_var_eff$t.ratio,
+    df = contr_var_eff$df,
+    paired = TRUE,
+    ci = 0.99
+  )
+
+  # make effect sizes table
+  contr_d_int <- contr_d_int %>%
+    data.frame() %>%
+    mutate(contrast = paste0(contr_var_eff$contrast, ' (', contr_var_eff$condition, ')'),
+           sensor = sensor_n + 1,
+           measure = meas,
+           task = task_i)
+
+  contr_d <- bind_rows(list(contr_d_tw, contr_d_cond, contr_d_int))
+
+  # output of foreach
   list(contrasts = list(contr_d), effects = list(df_model_fit))
 
 }
