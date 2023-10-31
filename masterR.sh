@@ -1,6 +1,6 @@
 #!/bin/bash
 
-declare -ar sensors=($(seq 0 1))
+declare -ar sensors=($(seq 0 31))
 
 
 # submit job for every permutation
