@@ -11,7 +11,8 @@ load.package(
   c('foreach', 'optparse',
     'rjson', 'dplyr', 'tidyr', 'stringr',
     'afex', 'optimx',
-    'performance', 'emmeans', 'effectsize')
+    'performance', 'emmeans', 'effectsize'),
+  lib = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/"
 )
 
 # parse arguments --------------------------------------------------------------
@@ -46,13 +47,13 @@ jobs <- opt$jobs
 
 # parallel settings ------------------------------------------------------------
 n.cores <- jobs
-my.cluster <- makeCluster(
+my.cluster <- parallel::makeCluster(
   n.cores,
   type = "PSOCK"
 )
 
 # register it to be used by %dopar%
-registerDoParallel(cl = my.cluster)
+doParallel::registerDoParallel(cl = my.cluster)
 
 # check if it is registered (optional)
 # foreach::getDoParRegistered()
@@ -115,11 +116,11 @@ sensor_results <- foreach(
   .init = list(list(), list())
 ) %dopar% {
 
-  require(dplyr)
-  require(afex)
-  require(emmeans)
-  require(effectsize)
-  require(performance)
+  require(dplyr, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
+  require(afex, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
+  require(emmeans, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
+  require(effectsize, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
+  require(performance, lib.loc = "/lustre/miifs01/project/m2_jgu-amd/josealanis/envs/r_env/")
 
   # get measure of interest
   dat <- sensor %>%
@@ -197,7 +198,7 @@ eff_sizes <- sensor_results[1] %>%
 
 # save tables ------------------------------------------------------------------
 task_i <- str_remove(
-  str_to_lower("Number/Letter"),
+  str_to_lower(task_i),
   '\\/'
 )
 # create paths for results storage
