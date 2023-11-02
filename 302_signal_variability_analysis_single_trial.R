@@ -234,12 +234,7 @@ contr_d_int <- contr_d_int %>%
 
 contr_d <- bind_rows(list(contr_d_tw, contr_d_cond, contr_d_int))
 
-# output of foreach
-contr_d
-df_model_fit
-
 # save tables ------------------------------------------------------------------
-
 task_i <- str_remove(
   str_to_lower(task_i),
   '\\/'
@@ -253,7 +248,7 @@ fpath_contrasts_var <- paste(
   paste0(task_i, '_sensor_', sensor_n, '_', measure, '_constrats_st.rds'),
   sep = '/')
 dir.create(dirname(file.path(fpath_contrasts_var)), showWarnings = FALSE)
-saveRDS(eff_sizes, file = fpath_contrasts_var)
+saveRDS(contr_d, file = fpath_contrasts_var)
 
 fpath_fits_var <- paste(
   paths$bids,
@@ -262,4 +257,4 @@ fpath_fits_var <- paste(
   paste0(task_i, '_sensor_', sensor_n,  '_', measure, '_fits_st.rds'),
   sep = '/')
 dir.create(dirname(file.path(fpath_fits_var)), showWarnings = FALSE)
-saveRDS(fits, file = fpath_fits_var)
+saveRDS(df_model_fit, file = fpath_fits_var)
