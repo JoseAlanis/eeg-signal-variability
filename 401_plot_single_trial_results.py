@@ -37,14 +37,14 @@ from config import (
 overwrite = False
 subject = 1
 session = 1
-task = 'numberletter'
+task = 'oddeven'
 window = 'pre'
 stimulus = 'cue'
 
 # generic epochs structure
 FPATH_EPOCHS = (os.path.join(FPATH_DERIVATIVES,
-                             'epochs',
-                             'sub-%s' % f'{subject:03}',
+                            'epochs',
+                            'sub-%s' % f'{subject:03}',
                              'sub-%s_task-%s_%s%s-epo.fif'
                              % (f'{subject:03}', task, window, stimulus)))
 epochs = read_epochs(FPATH_EPOCHS, preload=False)
@@ -55,27 +55,39 @@ if overwrite:
     logger.info("`overwrite` is set to ``True`` ")
 
 # %%
+which_measures = [
+    "permutation_entropy", "weighted_permutation_entropy",
+    "multiscale_entropy", "ms_1", "ms_2", "ms_3", "ms_4",
+    "activity", "mobility", "complexity",
+    "1f_offset", "1f_exponent",
+    "spectral_entropy"
+]
+
+# %%
 # import the data
 
 # create path for model fits
 FPATH_FITS_ODDEVEN = os.path.join(FPATH_DERIVATIVES,
                                   'analysis_dataframes',
-                                  'fits_back_up',
-                                  '%s_sensor_*_fits_st.rds' % task)
+                                  'oddeven_sensor_*_*_fits_st.rds')
 FPATH_FITS_ODDEVEN = glob.glob(FPATH_FITS_ODDEVEN)
 
 # object shape
-n_measures = 14
-n_sensors = len(FPATH_FITS_ODDEVEN)
+n_measures = len(which_measures)
+n_sensors = 32
 
 # load results for each sensor
-fits = np.empty((n_sensors, n_measures))
-p_vals = np.empty((n_sensors, n_measures))
+fits = np.empty((n_sensors, n_measures, 3))
+p_vals = np.empty((n_sensors, n_measures, 3))
+
 for fpath in FPATH_FITS_ODDEVEN:
+    basename = os.path.basename(fpath)
+    m = [m for m in which_measures if m in basename]
+    m = which_measures.index(m[0])
     sj = re.search(r'\d+', os.path.basename(fpath)).group(0)
-    fits[int(sj), ...] = pyreadr.read_r(fpath)[None].o_sq
+    fits[int(sj), m, :] = pyreadr.read_r(fpath)[None].Omega2_partial
     # p_vals[int(sj), ...] = pyreadr.read_r(fpath)[None].p
-    p_vals[int(sj), ...] = pyreadr.read_r(fpath)[None].o_sq_CI_low > 0.06
+    # p_vals[int(sj), m, ...] = pyreadr.read_r(fpath)[None].o_sq_CI_low > 0.06
 
 # # correct p-values
 # p_vals = multipletests(p_vals.flatten(), method='bonferroni')[0]
@@ -84,29 +96,43 @@ for fpath in FPATH_FITS_ODDEVEN:
 # create path for contrasts
 FPATH_CONTRASTS_ODDEVEN = os.path.join(FPATH_DERIVATIVES,
                                        'analysis_dataframes',
-                                       'fits_back_up',
-                                       '%s_sensor_*_constrats_st.rds' % task)
+                                       'oddeven_sensor_*_*_constrats_st.rds')
 FPATH_CONTRASTS_ODDEVEN = glob.glob(FPATH_CONTRASTS_ODDEVEN)
 
 # object shape
-n_contrasts = 2
+which_contrast = [
+    'Pre Cue - Post Cue',
+    'Pre Cue - Post Target',
+    'Post Cue - Post Target',
+    'Repeat - Switch',
+    'Pre Cue - Post Cue (Repeat)',
+    'Pre Cue - Post Target (Repeat)',
+    'Post Cue - Post Target (Repeat)',
+    'Pre Cue - Post Cue (Switch)',
+    'Pre Cue - Post Target (Switch)',
+    'Post Cue - Post Target (Switch)'
+]
+n_contrasts = len(which_contrast)
 
 # load results for each sensor
-contrasts = np.empty((len(FPATH_CONTRASTS_ODDEVEN), n_measures, n_contrasts))
+contrasts = np.empty((n_sensors, n_measures, n_contrasts))
 for fpath in FPATH_CONTRASTS_ODDEVEN:
+    basename = os.path.basename(fpath)
+    m = [m for m in which_measures if m in basename]
+    m = which_measures.index(m[0])
+
     sj_c = re.search(r'\d+', os.path.basename(fpath)).group(0)
     contr = pyreadr.read_r(fpath)[None]
 
-    contrasts[int(sj_c), :, 0] = contr[contr.contrast == 'Pre Cue - Post Cue'].d
-    contrasts[int(sj_c), :, 1] = contr[contr.contrast == 'Post Cue - Post Target'].d
+    contrasts[int(sj_c), m, :] = contr.d
 
 # %%
 # plot omnibus test results
 
 # measures to plot
-measures = pyreadr.read_r(FPATH_FITS_ODDEVEN[0])[None].measure
+measures = which_measures.copy()
 measure_labels = ['PE', 'WPE', 'MSE',
-                  'MSE$_{1}$', 'MSE$_{2}$', 'MSE$_{3}$', 'MSE$_{4}$', 'MSE$_{slope}$',
+                  'MSE$_{1}$', 'MSE$_{2}$', 'MSE$_{3}$', 'MSE$_{4}$',
                   'A', 'M', 'C',
                   r'1/$f$ (exp.)', r'1/$f$ (off.)',
                   'SE']
@@ -130,7 +156,7 @@ fig, ax = plt.subplot_mosaic(mosaic=[mnames_top,
                              empty_sentinel="X",
                              figsize=(25, 2.5))
 for n_meas in range(fits.shape[1]):
-    plot_topomap(fits[:, n_meas],
+    plot_topomap(fits[:, n_meas, 0],
                  epochs.info,
                  cmap=cmap,
                  cnorm=norm,
@@ -155,16 +181,15 @@ fig.colorbar(
     orientation='vertical',
     label=r'Effect size ($\omega^2$)',
 )
-title = 'Task:\nOdd/Even' if task == 'oddeven' else 'Number/Letter'
 ax['name'].set(yticks=[], yticklabels=[], xticks=[], xticklabels=[])
-ax['name'].annotate(title, (0.1, 0.5), fontsize=14, color='k')
+ax['name'].annotate('Task:\nOdd/Even', (0.1, 0.5), fontsize=14, color='k')
 ax['name'].spines['right'].set_visible(False)
 ax['name'].spines['top'].set_visible(False)
 ax['name'].spines['left'].set_visible(False)
 ax['name'].spines['bottom'].set_visible(False)
 # ax['cbar'].set_ylabel(r'Effect size ($\omega^2$)', labelpad=10.0)
 plt.close('all')
-fig.savefig('./%s_measures_o_sq.png' % task, dpi=300)
+fig.savefig('./measures_o_sq.png', dpi=300)
 
 # %%
 cmap_d = mpl.cm.RdBu_r
@@ -222,7 +247,7 @@ ax['name'].spines['bottom'].set_visible(False)
 ax['cbar'].set(yticks=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5],
                yticklabels=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5])
 plt.close('all')
-fig.savefig('./%s_measures_d_pre_cue-post_cue.png' % task, dpi=300)
+fig.savefig('./measures_d_pre_cue-post_cue.png', dpi=300)
 
 # %%
 cmap_d = mpl.cm.RdBu_r
@@ -279,4 +304,4 @@ ax['name'].spines['bottom'].set_visible(False)
 ax['cbar'].set(yticks=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5],
                yticklabels=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5])
 plt.close('all')
-fig.savefig('./%s_measures_d_post_cue-post_target.png' % task, dpi=300)
+fig.savefig('./measures_d_post_cue-post_target.png', dpi=300)
