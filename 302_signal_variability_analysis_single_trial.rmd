@@ -151,12 +151,12 @@ for (task_i in unique(signal_variability_st$task)) {
 
       # fit LMM
       var_mxd <- mixed(
-              var ~ tw * condition + (tw | subject:condition),
+              var ~ tw * condition + (tw * condition || subject),
               dat,
               method = 'S',
               check_contrasts = TRUE,
               all_fit = TRUE,
-              expand_re = FALSE,
+              expand_re = TRUE,
               control = lmerControl(optCtrl = list(maxfun = 1e6))
       )
 
@@ -185,8 +185,7 @@ for (task_i in unique(signal_variability_st$task)) {
                      AICc = mod_perf$AICc,
                      BIC = mod_perf$BIC,
                      R2_conditional = mod_perf$R2_conditional,
-                     R2_marginal = mod_perf$R2_marginal,
-                     ICC = mod_perf$ICC)
+                     R2_marginal = mod_perf$R2_marginal)
 
       # compute contrasts ** time window **
       var_eff <- emmeans(

@@ -20,6 +20,12 @@ option_list <- list(
               action = "store",
               default = "Odd/Even"
   ),
+  make_option("--measure",
+              type = "character",
+              help = "Which measure should be modelled?",
+              action = "store",
+              default = "permutation_entropy"
+  ),
   make_option("--lib",
               type = "character",
               help = "Path to R-library",
@@ -40,13 +46,13 @@ opt <- parse_args(
 )
 sensor_n <- opt$sensor_n
 task_i <- opt$task_i
+measure <- opt$measure
 lib <- opt$lib
 jobs <- opt$jobs
 
 if (lib == "default") {
   lib <- .libPaths()[1]
 }
-
 
 # get utility functions --------------------------------------------------------
 source('utils.R')
@@ -58,26 +64,6 @@ load.package(
     'performance', 'emmeans', 'effectsize'),
   lib = lib
 )
-
-# parallel settings ------------------------------------------------------------
-n.cores <- jobs
-my.cluster <- parallel::makeCluster(
-  n.cores,
-  type = "PSOCK"
-)
-
-# register it to be used by %dopar%
-doParallel::registerDoParallel(cl = my.cluster)
-
-# check if it is registered (optional)
-# foreach::getDoParRegistered()
-
-# function for combining output of foreach
-comb <- function(List1, List2) {
-  output_a <- c(List1[[1]], List2[[1]])
-  output_b <- c(List1[[2]], List2[[2]])
-  return(list(contrasts = output_a, effects = output_b))
-}
 
 # get paths to signal variability measures -------------------------------------
 paths <- fromJSON(file = "paths.json")
@@ -94,7 +80,7 @@ signal_variability_st <- readRDS(fpath_sigle_trial_var)
 
 # measures to be analysed
 measures <- c("permutation_entropy", "weighted_permutation_entropy",
-              "multiscale_entropy", "ms_1", "ms_2", "ms_3", "ms_4", "ms_slope",
+              "multiscale_entropy", "ms_1", "ms_2", "ms_3", "ms_4",
               "activity", "mobility", "complexity",
               "1f_offset", "1f_exponent",
               "spectral_entropy")
@@ -102,9 +88,10 @@ measures <- c("permutation_entropy", "weighted_permutation_entropy",
 # get paths to signal variability measures -------------------------------------
 
 # get sensor data
-sensor <- signal_variability_st %>%
+dat <- signal_variability_st %>%
   ungroup() %>%
   filter(sensor == sensor_n) %>%
+  select(-ms_slope) %>%
   pivot_longer(cols = permutation_entropy:spectral_entropy,
                names_to = "var_meas", values_to = "var") %>%
   filter(!is.na(var)) %>%
@@ -113,7 +100,9 @@ sensor <- signal_variability_st %>%
   mutate(tw = factor(tw, levels = c('Pre Cue', 'Post Cue', 'Post Target')),
          task = factor(task, levels = c('Odd/Even', 'Number/Letter')),
          condition = factor(condition, labels = c('Repeat', 'Switch'))
-  )
+  ) %>%
+  filter(var_meas == measure,
+         task == task_i)
 
 # fit models for each measure --------------------------------------------------
 
@@ -121,173 +110,147 @@ message(
   paste0(
     '\n',
     'Running signal variability analysis for sensor: ', sensor_n,
-    '. Task: ', task_i)
+    '. Task: ', task_i, '. Measure: ', measure)
 )
 
-sensor_results <- foreach(
-  meas = measures[1:2],
-  .combine = 'comb',
-  .init = list(list(), list())
-) %dopar% {
+# fit LMM
+var_mxd <- mixed(
+  var ~ tw * condition + (tw * condition || subject),
+  dat,
+  method = 'S',
+  check_contrasts = TRUE,
+  all_fit = TRUE,
+  expand_re = TRUE,
+  control = lmerControl(optCtrl = list(maxfun = 1e8))
+)
 
-  require(dplyr, lib.loc = lib)
-  require(afex, lib.loc = lib)
-  require(emmeans, lib.loc = lib)
-  require(effectsize, lib.loc = lib)
-  require(performance, lib.loc = lib)
+# model fit
+mod_perf <- performance::model_performance(var_mxd$full_model) %>%
+  data.frame()
 
-  # get measure of interest
-  dat <- sensor %>%
-    filter(var_meas == meas,
-           task == task_i)
+# effect sizes
+o2 <- effectsize::F_to_omega2(f = var_mxd$anova_table$F,
+                              df = var_mxd$anova_table$`num Df`,
+                              df_error = var_mxd$anova_table$`den Df`,
+                              ci = 0.99,
+                              alternative = "two.sided")
 
-  # fit LMM
-  var_mxd <- mixed(
-    var ~ tw * condition + (tw | subject:condition),
-    dat,
-    method = 'S',
-    check_contrasts = TRUE,
-    all_fit = TRUE,
-    expand_re = FALSE,
-    control = lmerControl(optCtrl = list(maxfun = 1e6))
-  )
+# save model fit in data frame for export
+df_model_fit <- o2 %>%
+  data.frame() %>%
+  mutate(predictor = row.names(var_mxd$anova_table),
+         F = var_mxd$anova_table$F,
+         p = var_mxd$anova_table$`Pr(>F)`,
+         optimiser = attr(var_mxd$full_model, 'optinfo')$optimizer,
+         sensor = sensor_n + 1,
+         measure = measure,
+         task = task_i,
+         AICc = mod_perf$AIC,
+         AICc = mod_perf$AICc,
+         BIC = mod_perf$BIC,
+         R2_conditional = mod_perf$R2_conditional,
+         R2_marginal = mod_perf$R2_marginal)
 
-  # model fit
-  mod_perf <- performance::model_performance(var_mxd$full_model) %>%
-    data.frame()
+# compute contrasts ** time window **
+var_eff <- emmeans(
+  var_mxd$full_model, ~ tw,
+  type = 'response',
+  lmer.df = "satterthwaite",
+  lmerTest.limit = nrow(dat),
+  level = 0.99
+)
+contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
+contr_var_eff <- data.frame(contr_var_eff)
 
-  # effect sizes
-  o2 <- effectsize::F_to_omega2(f = var_mxd$anova_table$F,
-                                df = var_mxd$anova_table$`num Df`,
-                                df_error = var_mxd$anova_table$`den Df`,
-                                ci = 0.99,
-                                alternative = "two.sided")
+# compute effect sizes
+contr_d_tw <- effectsize::t_to_d(
+  t = contr_var_eff$t.ratio,
+  df = contr_var_eff$df,
+  paired = TRUE,
+  ci = 0.99
+)
 
-  # save model fit in data frame for export
-  df_model_fit <- o2 %>%
-    data.frame() %>%
-    mutate(predictor = row.names(var_mxd$anova_table),
-           F = var_mxd$anova_table$F,
-           p = var_mxd$anova_table$`Pr(>F)`,
-           optimiser = attr(var_mxd$full_model, 'optinfo')$optimizer,
-           sensor = sensor_n + 1,
-           measure = meas,
-           task = task_i,
-           AICc = mod_perf$AIC,
-           AICc = mod_perf$AICc,
-           BIC = mod_perf$BIC,
-           R2_conditional = mod_perf$R2_conditional,
-           R2_marginal = mod_perf$R2_marginal,
-           ICC = mod_perf$ICC)
+# make effect sizes table
+contr_d_tw <- contr_d_tw %>%
+  data.frame() %>%
+  mutate(contrast = contr_var_eff$contrast,
+         sensor = sensor_n + 1,
+         measure = measure,
+         task = task_i)
 
-  # compute contrasts ** time window **
-  var_eff <- emmeans(
-    var_mxd$full_model, ~ tw,
-    type = 'response',
-    lmer.df = "satterthwaite",
-    lmerTest.limit = nrow(dat),
-    level = 0.99
-  )
-  contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
-  contr_var_eff <- data.frame(contr_var_eff)
+# compute contrasts ** condition **
+var_eff <- emmeans(
+  var_mxd$full_model, ~ condition,
+  type = 'response',
+  lmer.df = "satterthwaite",
+  lmerTest.limit = nrow(dat),
+  level = 0.99
+)
+contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
+contr_var_eff <- data.frame(contr_var_eff)
 
-  # compute effect sizes
-  contr_d_tw <- effectsize::t_to_d(
-    t = contr_var_eff$t.ratio,
-    df = contr_var_eff$df,
-    paired = TRUE,
-    ci = 0.99
-  )
+# compute effect sizes
+contr_d_cond <- effectsize::t_to_d(
+  t = contr_var_eff$t.ratio,
+  df = contr_var_eff$df,
+  paired = TRUE,
+  ci = 0.99
+)
 
-  # make effect sizes table
-  contr_d_tw <- contr_d_tw %>%
-    data.frame() %>%
-    mutate(contrast = contr_var_eff$contrast,
-           sensor = sensor_n + 1,
-           measure = meas,
-           task = task_i)
+# make effect sizes table
+contr_d_cond <- contr_d_cond %>%
+  data.frame() %>%
+  mutate(contrast = contr_var_eff$contrast,
+         sensor = sensor_n + 1,
+         measure = measure,
+         task = task_i)
 
-  # compute contrasts ** condition **
-  var_eff <- emmeans(
-    var_mxd$full_model, ~ condition,
-    type = 'response',
-    lmer.df = "satterthwaite",
-    lmerTest.limit = nrow(dat),
-    level = 0.99
-  )
-  contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
-  contr_var_eff <- data.frame(contr_var_eff)
+# compute contrasts ** interaction **
+var_eff <- emmeans(
+  var_mxd$full_model, ~ tw | condition,
+  type = 'response',
+  lmer.df = "satterthwaite",
+  lmerTest.limit = nrow(dat),
+  level = 0.99
+)
+contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
+contr_var_eff <- data.frame(contr_var_eff)
 
-  # compute effect sizes
-  contr_d_cond <- effectsize::t_to_d(
-    t = contr_var_eff$t.ratio,
-    df = contr_var_eff$df,
-    paired = TRUE,
-    ci = 0.99
-  )
+# compute effect sizes
+contr_d_int <- effectsize::t_to_d(
+  t = contr_var_eff$t.ratio,
+  df = contr_var_eff$df,
+  paired = TRUE,
+  ci = 0.99
+)
 
-  # make effect sizes table
-  contr_d_cond <- contr_d_cond %>%
-    data.frame() %>%
-    mutate(contrast = contr_var_eff$contrast,
-           sensor = sensor_n + 1,
-           measure = meas,
-           task = task_i)
+# make effect sizes table
+contr_d_int <- contr_d_int %>%
+  data.frame() %>%
+  mutate(contrast = paste0(contr_var_eff$contrast, ' (', contr_var_eff$condition, ')'),
+         sensor = sensor_n + 1,
+         measure = measure,
+         task = task_i)
 
-  # compute contrasts ** interaction **
-  var_eff <- emmeans(
-    var_mxd$full_model, ~ tw | condition,
-    type = 'response',
-    lmer.df = "satterthwaite",
-    lmerTest.limit = nrow(dat),
-    level = 0.99
-  )
-  contr_var_eff <- contrast(var_eff, method = 'pairwise', adjust = 'holm')
-  contr_var_eff <- data.frame(contr_var_eff)
+contr_d <- bind_rows(list(contr_d_tw, contr_d_cond, contr_d_int))
 
-  # compute effect sizes
-  contr_d_int <- effectsize::t_to_d(
-    t = contr_var_eff$t.ratio,
-    df = contr_var_eff$df,
-    paired = TRUE,
-    ci = 0.99
-  )
-
-  # make effect sizes table
-  contr_d_int <- contr_d_int %>%
-    data.frame() %>%
-    mutate(contrast = paste0(contr_var_eff$contrast, ' (', contr_var_eff$condition, ')'),
-           sensor = sensor_n + 1,
-           measure = meas,
-           task = task_i)
-
-  contr_d <- bind_rows(list(contr_d_tw, contr_d_cond, contr_d_int))
-
-  # output of foreach
-  list(contrasts = list(contr_d), effects = list(df_model_fit))
-
-}
-
-# extract foreach results ------------------------------------------------------
-
-# save model fits
-fits <- sensor_results[2] %>%
-  bind_rows()
-# save effect sizes
-eff_sizes <- sensor_results[1] %>%
-  bind_rows()
+# output of foreach
+contr_d
+df_model_fit
 
 # save tables ------------------------------------------------------------------
+
 task_i <- str_remove(
   str_to_lower(task_i),
   '\\/'
 )
+
 # create paths for results storage
 fpath_contrasts_var <- paste(
   paths$bids,
   'derivatives',
   'analysis_dataframes',
-  paste0(task_i, '_sensor_', sensor_n, '_constrats_st.rds'),
+  paste0(task_i, '_sensor_', sensor_n, '_', measure, '_constrats_st.rds'),
   sep = '/')
 dir.create(dirname(file.path(fpath_contrasts_var)), showWarnings = FALSE)
 saveRDS(eff_sizes, file = fpath_contrasts_var)
@@ -296,7 +259,7 @@ fpath_fits_var <- paste(
   paths$bids,
   'derivatives',
   'analysis_dataframes',
-  paste0(task_i, '_sensor_', sensor_n, '_fits_st.rds'),
+  paste0(task_i, '_sensor_', sensor_n,  '_', measure, '_fits_st.rds'),
   sep = '/')
 dir.create(dirname(file.path(fpath_fits_var)), showWarnings = FALSE)
 saveRDS(fits, file = fpath_fits_var)

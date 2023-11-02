@@ -37,14 +37,14 @@ from config import (
 overwrite = False
 subject = 1
 session = 1
-task = 'oddeven'
+task = 'numberletter'
 window = 'pre'
 stimulus = 'cue'
 
 # generic epochs structure
 FPATH_EPOCHS = (os.path.join(FPATH_DERIVATIVES,
-                            'epochs',
-                            'sub-%s' % f'{subject:03}',
+                             'epochs',
+                             'sub-%s' % f'{subject:03}',
                              'sub-%s_task-%s_%s%s-epo.fif'
                              % (f'{subject:03}', task, window, stimulus)))
 epochs = read_epochs(FPATH_EPOCHS, preload=False)
@@ -60,7 +60,8 @@ if overwrite:
 # create path for model fits
 FPATH_FITS_ODDEVEN = os.path.join(FPATH_DERIVATIVES,
                                   'analysis_dataframes',
-                                  'oddeven_sensor_*_fits_st.rds')
+                                  'fits_back_up',
+                                  '%s_sensor_*_fits_st.rds' % task)
 FPATH_FITS_ODDEVEN = glob.glob(FPATH_FITS_ODDEVEN)
 
 # object shape
@@ -83,7 +84,8 @@ for fpath in FPATH_FITS_ODDEVEN:
 # create path for contrasts
 FPATH_CONTRASTS_ODDEVEN = os.path.join(FPATH_DERIVATIVES,
                                        'analysis_dataframes',
-                                       'oddeven_sensor_*_constrats_st.rds')
+                                       'fits_back_up',
+                                       '%s_sensor_*_constrats_st.rds' % task)
 FPATH_CONTRASTS_ODDEVEN = glob.glob(FPATH_CONTRASTS_ODDEVEN)
 
 # object shape
@@ -153,15 +155,16 @@ fig.colorbar(
     orientation='vertical',
     label=r'Effect size ($\omega^2$)',
 )
+title = 'Task:\nOdd/Even' if task == 'oddeven' else 'Number/Letter'
 ax['name'].set(yticks=[], yticklabels=[], xticks=[], xticklabels=[])
-ax['name'].annotate('Task:\nOdd/Even', (0.1, 0.5), fontsize=14, color='k')
+ax['name'].annotate(title, (0.1, 0.5), fontsize=14, color='k')
 ax['name'].spines['right'].set_visible(False)
 ax['name'].spines['top'].set_visible(False)
 ax['name'].spines['left'].set_visible(False)
 ax['name'].spines['bottom'].set_visible(False)
 # ax['cbar'].set_ylabel(r'Effect size ($\omega^2$)', labelpad=10.0)
 plt.close('all')
-fig.savefig('./measures_o_sq.png', dpi=300)
+fig.savefig('./%s_measures_o_sq.png' % task, dpi=300)
 
 # %%
 cmap_d = mpl.cm.RdBu_r
@@ -219,7 +222,7 @@ ax['name'].spines['bottom'].set_visible(False)
 ax['cbar'].set(yticks=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5],
                yticklabels=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5])
 plt.close('all')
-fig.savefig('./measures_d_pre_cue-post_cue.png', dpi=300)
+fig.savefig('./%s_measures_d_pre_cue-post_cue.png' % task, dpi=300)
 
 # %%
 cmap_d = mpl.cm.RdBu_r
@@ -276,4 +279,4 @@ ax['name'].spines['bottom'].set_visible(False)
 ax['cbar'].set(yticks=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5],
                yticklabels=[-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5])
 plt.close('all')
-fig.savefig('./measures_d_post_cue-post_target.png', dpi=300)
+fig.savefig('./%s_measures_d_post_cue-post_target.png' % task, dpi=300)
