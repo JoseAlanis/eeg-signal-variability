@@ -26,7 +26,7 @@ source('utils.R')
 
 ```{r session-preferences, include = FALSE}
 load.package(
-        c('rjson', 'dplyr', 'tidyr', 'kableExtra')
+        c('rjson', 'dplyr', 'tidyr', 'kableExtra', 'stringr')
 )
 ```
 
@@ -287,15 +287,19 @@ Also, we exclude trials with extreme RTs (abs(z scored RT) > 3.0):
 
 ```{r exclude-non-complete-and-extreme-RTs}
 signal_variability_st <- signal_variability_st %>%
-        filter(subject %in% complete_subjects$subject) %>%
-        group_by(subject, task, condition) %>%
-        mutate(logrt = log(rt)) %>%
-        mutate(zrt = (logrt - mean(logrt, na.rm = TRUE)) / sd(logrt, na.rm = TRUE)) %>%
-        filter(abs(zrt) < 3.0) %>%
-        ungroup() %>%
-        mutate(condition = stringr::str_to_title(condition),
-               stimulus = stringr::str_to_title(stimulus),
-               window = stringr::str_to_title(window))
+  filter(subject %in% complete_subjects$subject) %>%
+  group_by(subject, task, condition) %>%
+  mutate(logrt = log(rt)) %>%
+  mutate(zrt = (logrt - mean(logrt, na.rm = TRUE)) / sd(logrt, na.rm = TRUE)) %>%
+  filter(abs(zrt) < 3.0) %>%
+  ungroup() %>%
+  mutate(condition = stringr::str_to_title(condition),
+         stimulus = stringr::str_to_title(stimulus),
+         window = stringr::str_to_title(window)) %>%
+  mutate(acc = accuracy) %>%
+  mutate(accuracy = ifelse(accuracy == 1, "Correct", "Incorrect")) %>%
+  filter(accuracy == 'Correct') %>%
+  select(-acc)
 ```
 
 ## 3.1) Check number of trials available for analysis
@@ -328,12 +332,6 @@ trial_numbers %>%
 # 4) Save DF
 
 ```{r save-single-trial-df}
-signal_variability_st <- signal_variability_st %>%
-        mutate(acc = accuracy) %>%
-        mutate(accuracy = ifelse(accuracy == 1, "Correct", "Incorrect")) %>%
-        filter(accuracy == 'Correct') %>%
-        select(-acc)
-
 fpath_single_trial_var <- paste(paths$bids,
                                 'derivatives',
                                 'analysis_dataframes',
@@ -342,4 +340,29 @@ fpath_single_trial_var <- paste(paths$bids,
 dir.create(dirname(file.path(fpath_single_trial_var)), showWarnings = FALSE)
 saveRDS(signal_variability_st,
         file = fpath_single_trial_var)
+```
+```{r save-measures-in-separate-files}
+measures <- c("permutation_entropy", "weighted_permutation_entropy",
+  "multiscale_entropy", "ms_1", "ms_2", "ms_3", "ms_4",
+  "activity", "mobility", "complexity",
+  "1f_offset", "1f_exponent",
+  "spectral_entropy")
+for (meas in measures) {
+  meas_df <- signal_variability_st %>%
+    select(subject, epoch, sensor,
+           condition, stimulus, window, task, all_of(meas)) %>%
+    mutate(tw = paste(str_to_title(window),
+                      str_to_title(stimulus))) %>%
+    mutate(tw = factor(tw, levels = c('Pre Cue', 'Post Cue', 'Post Target')),
+           task = factor(task, levels = c('Odd/Even', 'Number/Letter')),
+           condition = factor(condition, labels = c('Repeat', 'Switch'))) %>%
+    select(-stimulus, -window)
+  fpath_single_trial_var_meas <- paste(paths$bids,
+                                       'derivatives',
+                                       'analysis_dataframes',
+                                       paste0(meas, '_single_trial.rds'),
+                                       sep = '/')
+  saveRDS(meas_df,
+          file = fpath_single_trial_var_meas)
+}
 ```

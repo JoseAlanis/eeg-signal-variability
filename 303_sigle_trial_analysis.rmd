@@ -1,0 +1,177 @@
+---
+title: "More than noise?: Signal variability measures, single trial analysis"
+author: "José C. García Alanis"
+date:  "`r Sys.Date()`"
+output:
+html_document:
+theme: lumen
+highlight: pygments
+css: "styler.css"
+---
+
+Created with `r R.version.string`
+
+```{r, setup, include = FALSE}
+knitr::opts_chunk$set(class.source = "customCode",
+                      class.output = "customOutput",
+                      class.message = "customWarning")
+if (interactive()) {
+  path <- dirname(rstudioapi::getSourceEditorContext()$path)
+} else {
+  path <- normalizePath('./')
+}
+setwd(path)
+source('utils.R')
+```
+
+```{r session-preferences, include = FALSE}
+load.package(
+        c('rjson', 'dplyr', 'tidyr', 'stringr',
+          'afex', 'optimx',
+          'performance', 'emmeans', 'effectsize',
+          'ggplot2')
+)
+
+# adjust the plotting theme
+theme_set(
+        theme_linedraw() +
+                theme(panel.grid = element_blank(),
+                      strip.background = element_rect(fill = "grey92",
+                                                      color = "grey92"),
+                      strip.text = element_text(color = "black", size = 10)
+                )
+)
+
+# scale function
+scale2 <- function(x, na.rm = TRUE) (x - mean(x, na.rm = na.rm)) / sd(x, na.rm)
+```
+
+```{r import-data}
+# get paths to Odd/Even task PSD
+paths <- fromJSON(file = "paths.json")
+fpath_sigle_trial_var <- paste(
+        paths$bids,
+        'derivatives',
+        'analysis_dataframes',
+        'single_trial_variability.rds',
+        sep = '/'
+)
+
+signal_variability_st <- readRDS(fpath_sigle_trial_var)
+```
+```{r}
+signal_variability_st <- signal_variability_st %>%
+        mutate(tw = paste(str_to_title(window),
+                          str_to_title(stimulus))) %>%
+        mutate(tw = factor(tw, levels = c('Pre Cue', 'Post Cue', 'Post Target')),
+               task = factor(task, levels = c('Odd/Even', 'Number/Letter')),
+               condition = factor(condition, labels = c('Repeat', 'Switch')))
+```
+
+```{r}
+dat_corr <- signal_variability_st %>%
+  select(-ms_slope) %>%
+  group_by(subject, condition, task, tw, epoch) %>%
+  summarise(activity = mean(activity, na.rm = TRUE),
+            mobility = mean(mobility, na.rm = TRUE),
+            complexity = mean(complexity, na.rm = TRUE),
+            permutation_entropy = mean(permutation_entropy, na.rm = TRUE),
+            weighted_permutation_entropy = mean(weighted_permutation_entropy, na.rm = TRUE),
+            multiscale_entropy = mean(multiscale_entropy, na.rm = TRUE),
+            ms_1 = mean(ms_1, na.rm = TRUE),
+            ms_2 = mean(ms_2, na.rm = TRUE),,
+            ms_3 = mean(ms_3, na.rm = TRUE),
+            ms_4 = mean(ms_4, na.rm = TRUE),
+            spectral_entropy = mean(spectral_entropy, na.rm = TRUE),
+            `1f_offset` = mean(`1f_offset`, na.rm = TRUE),
+            `1f_exponent` = mean(`1f_exponent`, na.rm = TRUE)
+            )
+
+dat_corr <- dat_corr %>%
+  group_by(subject, condition, task, tw) %>%
+  summarise(activity = mean(activity, na.rm = TRUE),
+            mobility = mean(mobility, na.rm = TRUE),
+            complexity = mean(complexity, na.rm = TRUE),
+            permutation_entropy = mean(permutation_entropy, na.rm = TRUE),
+            weighted_permutation_entropy = mean(weighted_permutation_entropy, na.rm = TRUE),
+            multiscale_entropy = mean(multiscale_entropy, na.rm = TRUE),
+            ms_1 = mean(ms_1, na.rm = TRUE),
+            ms_2 = mean(ms_2, na.rm = TRUE), ,
+            ms_3 = mean(ms_3, na.rm = TRUE),
+            ms_4 = mean(ms_4, na.rm = TRUE),
+            spectral_entropy = mean(spectral_entropy, na.rm = TRUE),
+            `1f_offset` = mean(`1f_offset`, na.rm = TRUE),
+            `1f_exponent` = mean(`1f_exponent`, na.rm = TRUE)
+  )
+```
+```{r}
+baseline_oddeven <- dat_corr %>%
+  filter(tw == 'Pre Cue') %>%
+  filter(task == 'Odd/Even') %>%
+  pivot_wider(names_from = condition,
+              values_from = activity:`1f_exponent`)
+
+correlation_within <- baseline_oddeven %>%
+  ungroup() %>%
+  select(activity_Repeat:`1f_exponent_Switch`) %>%
+  correlation::correlation(redundant = TRUE) %>%
+  filter(grepl('Repeat', Parameter1)) %>%
+  filter(grepl('Switch', Parameter2)) %>%
+  mutate(sig = ifelse(p < 0.001, '***',
+                      ifelse(p < 0.01, '**',
+                             ifelse(p < 0.05, '*', ''))),
+  sig_alpha = ifelse(p < 0.05, 1.0, 0.25))
+```
+```{r}
+within_corr <- ggplot(data = correlation_within,
+       aes(x = Parameter1, y = Parameter2, fill = r, alpha = sig_alpha,
+           label = format(round(r, 2), nsmall = 2))) +
+  geom_tile() +
+  scale_fill_distiller(palette = "RdBu") +
+  geom_text() +
+        theme(axis.text.x = element_text(angle = -30, hjust = 0)); within_corr
+
+ggsave(filename = './within_corr.png', plot = within_corr, dpi=300,
+       height = 10, width = 12)
+```
+
+```{r}
+baseline_repeat <- dat_corr %>%
+  filter(tw == 'Pre Cue') %>%
+  filter(task == 'Odd/Even') %>%
+  filter(condition == 'Repeat') %>%
+  pivot_wider(names_from = task,
+              values_from = activity:`1f_exponent`) %>%
+  ungroup() %>%
+  select(-condition)
+
+baseline_switch <- dat_corr %>%
+  filter(tw == 'Pre Cue') %>%
+  filter(task == 'Number/Letter') %>%
+  filter(condition == 'Switch') %>%
+  pivot_wider(names_from = task,
+              values_from = activity:`1f_exponent`) %>%
+  ungroup() %>%
+  select(-condition)
+
+correlation_between <- baseline_repeat %>%
+  left_join(., baseline_switch, by = c('subject', 'tw')) %>%
+  select(`activity_Odd/Even`:`1f_exponent_Number/Letter`) %>%
+  cor() %>%
+  reshape2::melt() %>%
+  filter(grepl('Odd\\/Even', Var1)) %>%
+  filter(grepl('Number\\/Letter', Var2))
+```
+
+```{r}
+between_corr <- ggplot(data = correlation_between,
+                      aes(x = Var1, y = Var2, fill = value,
+                          label = format(round(value, 2), nsmall = 2))) +
+  geom_tile() +
+  scale_fill_distiller(palette = "RdBu") +
+  geom_text() +
+  theme(axis.text.x = element_text(angle = -30, hjust = 0)); between_corr
+
+ggsave(filename = './between_corr.png', plot = between_corr, dpi=300,
+       height = 10, width = 12)
+```
