@@ -27,9 +27,7 @@ source('utils.R')
 ```{r session-preferences, include = FALSE}
 load.package(
         c('rjson', 'dplyr', 'tidyr', 'stringr',
-          'afex', 'optimx',
-          'performance', 'emmeans', 'effectsize',
-          'ggplot2')
+          'ggplot2', 'patchwork')
 )
 
 # adjust the plotting theme
@@ -120,19 +118,64 @@ correlation_within <- baseline_oddeven %>%
   mutate(sig = ifelse(p < 0.001, '***',
                       ifelse(p < 0.01, '**',
                              ifelse(p < 0.05, '*', ''))),
-  sig_alpha = ifelse(p < 0.05, 1.0, 0.25))
+  sig_alpha = ifelse(p < 0.05, 0.9, 0.25)) %>%
+  mutate(Parameter1 = factor(Parameter1,
+                             levels = c("activity_Repeat", "mobility_Repeat", "complexity_Repeat",
+                                        "permutation_entropy_Repeat", "weighted_permutation_entropy_Repeat",
+                                        "multiscale_entropy_Repeat", "ms_1_Repeat", "ms_2_Repeat", "ms_3_Repeat",
+                                        "ms_4_Repeat", "spectral_entropy_Repeat", "1f_offset_Repeat",
+                                        "1f_exponent_Repeat"),
+                             labels = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE$_{1}$','MSE$_{2}$', 'MSE$_{3}$', 'MSE$_{4}$',
+                             'SE', '1/$f$ (off.)',  '1/$f$ (exp.)')),
+         Parameter2 = factor(Parameter2,
+                             levels = c("activity_Switch", "mobility_Switch", "complexity_Switch",
+                                        "permutation_entropy_Switch", "weighted_permutation_entropy_Switch",
+                                        "multiscale_entropy_Switch", "ms_1_Switch", "ms_2_Switch", "ms_3_Switch",
+                                        "ms_4_Switch", "spectral_entropy_Switch", "1f_offset_Switch",
+                                        "1f_exponent_Switch"),
+                             labels = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE$_{1}$','MSE$_{2}$', 'MSE$_{3}$', 'MSE$_{4}$',
+                                        'SE', '1/$f$ (off.)',  '1/$f$ (exp.)'))) %>%
+  mutate(annot = ifelse(r > 0.995, '*', ''))
 ```
 ```{r}
 within_corr <- ggplot(data = correlation_within,
-       aes(x = Parameter1, y = Parameter2, fill = r, alpha = sig_alpha,
-           label = format(round(r, 2), nsmall = 2))) +
+       aes(x = Parameter1, y = Parameter2, fill = r,
+           label = paste0(format(round(r, 2), nsmall = 2), annot))) +
+  scale_x_discrete(labels = parse(text = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE[1]','MSE[2]', 'MSE[3]', 'MSE[4]',
+                                           'SE', '1/f~(off.)',  '1/f~(exp.)')),
+                   position = 'top') +
+  scale_y_discrete(labels = parse(text = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE[1]','MSE[2]', 'MSE[3]', 'MSE[4]',
+                                           'SE', '1/f~(off.)',  '1/f~(exp.)'))) +
   geom_tile() +
-  scale_fill_distiller(palette = "RdBu") +
-  geom_text() +
-        theme(axis.text.x = element_text(angle = -30, hjust = 0)); within_corr
+  scale_fill_distiller(palette = "RdBu", limits = c(-1, 1),
+                       breaks = seq(-1, 1, 0.1),
+                       direction = -1) +
+  geom_text(aes(alpha = sig_alpha), parse = FALSE) +
+  labs(y = 'Trials set 1 (session one)',
+       x = 'Trials set 2 (session one)',
+       title = 'Within-session convergent validities',
+       # fill = "Correlation (Person's r)",
+       subtitle = "(Pearson's r)") +
+  guides(alpha = 'none',
+         # fill = guide_legend(title.position = 'top',
+         #                     title.hjust = 0.5,
+         #                     direction = 'horizontal',
+         #                     nrow = 1,
+         #                     label.position = 'bottom'),
+         fill = 'none') +
+  theme(plot.title = element_text(size = 14, face = 'bold'),
+        plot.subtitle = element_text(size = 14),
+        axis.text.x = element_text(angle = 30, hjust = 0, size = 12),
+        axis.title.x = element_text(margin = margin(b = 10), size = 14),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        legend.text = element_text(size = 10),
+        legend.position = 'bottom',
+        plot.margin = margin(1,1.75,1.5,1.2, "cm"),
+        plot.tag = element_text(size = 20)); within_corr
 
 ggsave(filename = './within_corr.png', plot = within_corr, dpi=300,
-       height = 10, width = 12)
+       height = 10, width = 10)
 ```
 
 ```{r}
@@ -157,21 +200,78 @@ baseline_switch <- dat_corr %>%
 correlation_between <- baseline_repeat %>%
   left_join(., baseline_switch, by = c('subject', 'tw')) %>%
   select(`activity_Odd/Even`:`1f_exponent_Number/Letter`) %>%
-  cor() %>%
-  reshape2::melt() %>%
-  filter(grepl('Odd\\/Even', Var1)) %>%
-  filter(grepl('Number\\/Letter', Var2))
+  correlation::correlation(redundant = TRUE) %>%
+  filter(grepl('Odd\\/Even', Parameter1)) %>%
+  filter(grepl('Number\\/Letter', Parameter2)) %>%
+  mutate(sig = ifelse(p < 0.001, '***',
+                      ifelse(p < 0.01, '**',
+                             ifelse(p < 0.05, '*', ''))),
+         sig_alpha = ifelse(p < 0.05, 0.9, 0.25)) %>%
+  mutate(Parameter1 = factor(Parameter1,
+                             levels = c("activity_Odd/Even", "mobility_Odd/Even", "complexity_Odd/Even",
+                                        "permutation_entropy_Odd/Even", "weighted_permutation_entropy_Odd/Even",
+                                        "multiscale_entropy_Odd/Even", "ms_1_Odd/Even", "ms_2_Odd/Even", "ms_3_Odd/Even",
+                                        "ms_4_Odd/Even", "spectral_entropy_Odd/Even", "1f_offset_Odd/Even",
+                                        "1f_exponent_Odd/Even"),
+                             labels = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE$_{1}$','MSE$_{2}$', 'MSE$_{3}$', 'MSE$_{4}$',
+                                        'SE', '1/$f$ (off.)',  '1/$f$ (exp.)')),
+         Parameter2 = factor(Parameter2,
+                             levels = c("activity_Number/Letter", "mobility_Number/Letter", "complexity_Number/Letter",
+                                        "permutation_entropy_Number/Letter", "weighted_permutation_entropy_Number/Letter",
+                                        "multiscale_entropy_Number/Letter", "ms_1_Number/Letter", "ms_2_Number/Letter", "ms_3_Number/Letter",
+                                        "ms_4_Number/Letter", "spectral_entropy_Number/Letter", "1f_offset_Number/Letter",
+                                        "1f_exponent_Number/Letter"),
+                             labels = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE$_{1}$','MSE$_{2}$', 'MSE$_{3}$', 'MSE$_{4}$',
+                                        'SE', '1/$f$ (off.)',  '1/$f$ (exp.)')))
 ```
 
 ```{r}
 between_corr <- ggplot(data = correlation_between,
-                      aes(x = Var1, y = Var2, fill = value,
-                          label = format(round(value, 2), nsmall = 2))) +
+                      aes(x = Parameter1, y = Parameter2, fill = r,
+                          label = format(round(r, 2), nsmall = 2))) +
+  scale_x_discrete(labels = parse(text = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE[1]','MSE[2]', 'MSE[3]', 'MSE[4]',
+                                           'SE', '1/f~(off.)',  '1/f~(exp.)')),
+                   position = 'top') +
+  scale_y_discrete(labels = parse(text = c('A', 'M', 'C', 'PE', 'WPE', 'MSE','MSE[1]','MSE[2]', 'MSE[3]', 'MSE[4]',
+                                           'SE', '1/f~(off.)',  '1/f~(exp.)'))) +
   geom_tile() +
-  scale_fill_distiller(palette = "RdBu") +
-  geom_text() +
-  theme(axis.text.x = element_text(angle = -30, hjust = 0)); between_corr
+  scale_fill_distiller(palette = "RdBu", limits = c(-1, 1),
+                       breaks = seq(-1, 1, 0.1),
+                       direction = -1) +
+  geom_text(aes(alpha = sig_alpha)) +
+  labs(y = 'Trials set 1 (session one)',
+       x = 'Trials set 2 (session two)',
+       title = 'Between-session convergent validities',
+       # fill = "Correlation (Person's r)"
+       subtitle = "(Person's r)") +
+  guides(alpha = 'none',
+         # fill = guide_legend(title.position = 'top',
+         #                     title.hjust = 0.5,
+         #                     direction = 'horizontal',
+         #                     nrow = 1,
+         #                     label.position = 'bottom'),
+         fill = 'none') +
+  theme(plot.title = element_text(size = 14, face = 'bold'),
+        plot.subtitle = element_text(size = 14),
+        axis.text.x = element_text(angle = 30, hjust = 0, size = 12),
+        axis.title.x = element_text(margin = margin(b = 10), size = 14),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(margin = margin(r = 10), size = 14),
+        legend.text = element_text(size = 10),
+        legend.position = 'bottom',
+        plot.margin = margin(1,1.75,1.5,1.2, "cm"),
+        plot.tag = element_text(size = 20)); between_corr
 
 ggsave(filename = './between_corr.png', plot = between_corr, dpi=300,
-       height = 10, width = 12)
+       height = 10, width = 10)
+```
+```{r}
+# show plot
+convergent_plot <- (within_corr) + (between_corr) +
+  plot_annotation(tag_levels = 'a', tag_suffix = ' |'); convergent_plot
+
+ggsave(filename = './convergent_plot.png',
+       plot = convergent_plot,
+       width = 20, height = 10,
+       dpi = 600)
 ```
