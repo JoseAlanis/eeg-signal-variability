@@ -329,6 +329,36 @@ trial_numbers %>%
         kable_paper("hover", full_width = F)
 ```
 
+## 3.2) Sample descriptives
+
+```{r sample-descriptives}
+fpath_subject_data <- paste(paths$bids,
+                            'subject_data.csv',
+                            sep = '/')
+subject_data <- read.csv(fpath_subject_data, sep = ';')
+
+subject_data <- subject_data %>%
+  filter(Subject %in% complete_subjects$subject)
+
+subject_data %>%
+  summarise(m_age = mean(age),
+            sd_age = sd(age),
+            min_age = min(age),
+            max_age = max(age)) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F)
+
+```
+
+```{r}
+subject_data %>%
+  group_by(sex) %>%
+  count(sex) %>%
+  kbl() %>%
+  kable_paper("hover", full_width = F)
+```
+
+
 # 4) Save DF
 
 ```{r save-single-trial-df}
